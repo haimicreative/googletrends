@@ -27,4 +27,5 @@ basic_trends <- ts_gtrends(
 
 dc_clearblue <- ts_gtrends_mwd(c("ClearBlue"), geo = "FI")
 
-
+## Saving the data frame
+write.csv(dc_clearblue, "dc_clearblue.csv", row.names=FALSE, quote=FALSE) 
