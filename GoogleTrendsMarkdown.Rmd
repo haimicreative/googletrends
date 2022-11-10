@@ -29,6 +29,8 @@ birthsandpopulation <- read.csv("birthsandpopulationY04Y22.csv")
 ##Defining keywords for the analysis
 s_terms <- c("ClearBlue", "HCG", "IVF", "raskauspahoinvointi", "ovulaatio", "ovulaatiotesti", "raskaus", "raskaana", "raskaustesti", "synnytys", "ultraääni")
 
+```
+
 
 ##Downloading basic google trends
 basic_trends <- ts_gtrends(
@@ -39,7 +41,9 @@ basic_trends <- ts_gtrends(
 
 ##Downloading detailed and consistent data with TrendEcon and saving it as CSV
 
-##dc_clearblue <- ts_gtrends_mwd(c("ClearBlue"), geo = "FI")
+dc_clearblue <- ts_gtrends_mwd(c("ClearBlue"), geo = "FI")
+write.csv(dc_clearblue, "dc_clearblue.csv", row.names=FALSE, quote=FALSE) 
+
 
 
 ```

@@ -30,6 +30,7 @@ proc_keyword_init("raskaustesti", "FI")
 proc_keyword_init("clearblue", "FI")
 proc_keyword_init("ovulaatiotesti","FI")
 proc_keyword_init("raskaana","FI")
+proc_keyword_init("raskauspahoinvointi","FI")
 
 ##Downloading detailed and consistent data with TrendEcon
 
