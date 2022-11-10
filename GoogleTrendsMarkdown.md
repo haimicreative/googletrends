@@ -6,34 +6,229 @@ output:
   html_document: 
     keep_md: yes
 ---
+This is analysis part of Master Thesis written by Pekka Haimi.  
+Aim of the analysis:
 
+* Import Finnish birth and population data
 
++ Download Google Trends data with the TrendEcon package for individual keywords
 
-## R Markdown
++ Aggregate Google Trends data from daily to monthly level
+ 
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
 
 
 ```r
-summary(cars)
+## Loading libraries
+library(trendecon)
+
+## Importing birth and population data and downloading Google Trends data 
+birthsandpopulation <- read.csv("birthsandpopulationY04Y22.csv")
+
+##Defining keywords for the analysis
+s_terms <- c("ClearBlue", "HCG", "IVF", "raskauspahoinvointi", "ovulaatio", "ovulaatiotesti", "raskaus", "raskaana", "raskaustesti", "synnytys", "ultraääni")
+
+
+##Downloading basic google trends
+basic_trends <- ts_gtrends(
+                keyword = s_terms,
+                time ="2004-01-01 2022-07-31",
+                geo ="FI"
+)
 ```
 
 ```
-##      speed           dist       
-##  Min.   : 4.0   Min.   :  2.00  
-##  1st Qu.:12.0   1st Qu.: 26.00  
-##  Median :15.0   Median : 36.00  
-##  Mean   :15.4   Mean   : 42.98  
-##  3rd Qu.:19.0   3rd Qu.: 56.00  
-##  Max.   :25.0   Max.   :120.00
+## Downloading data for 2004-01-01 2022-07-31
 ```
 
-## Including Plots
+```
+## Server response: 429 - too many requests
+```
 
-You can also embed plots, for example:
+```
+## Waiting for 5 seconds
+```
 
-![](GoogleTrendsMarkdown_files/figure-html/pressure-1.png)<!-- -->
+```
+## Retrying...
+```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```
+## Attempt 2/5
+```
+
+```
+## Server response: 429 - too many requests
+```
+
+```
+## Waiting for 10 seconds
+```
+
+```
+## Retrying...
+```
+
+```
+## Attempt 3/5
+```
+
+```
+## Downloading data for 2004-01-01 2022-07-31
+```
+
+```
+## Server response: 429 - too many requests
+```
+
+```
+## Waiting for 5 seconds
+```
+
+```
+## Retrying...
+```
+
+```
+## Attempt 2/5
+```
+
+```
+## Server response: 429 - too many requests
+```
+
+```
+## Waiting for 10 seconds
+```
+
+```
+## Retrying...
+```
+
+```
+## Attempt 3/5
+```
+
+```
+## Server response: 429 - too many requests
+```
+
+```
+## Waiting for 15 seconds
+```
+
+```
+## Retrying...
+```
+
+```
+## Attempt 4/5
+```
+
+```
+## Downloading data for 2004-01-01 2022-07-31
+## Downloading data for 2004-01-01 2022-07-31
+## Downloading data for 2004-01-01 2022-07-31
+```
+
+```
+## Server response: 429 - too many requests
+```
+
+```
+## Waiting for 5 seconds
+```
+
+```
+## Retrying...
+```
+
+```
+## Attempt 2/5
+```
+
+```
+## Server response: 429 - too many requests
+```
+
+```
+## Waiting for 10 seconds
+```
+
+```
+## Retrying...
+```
+
+```
+## Attempt 3/5
+```
+
+```
+## Downloading data for 2004-01-01 2022-07-31
+## Downloading data for 2004-01-01 2022-07-31
+## Downloading data for 2004-01-01 2022-07-31
+```
+
+```
+## Server response: 429 - too many requests
+```
+
+```
+## Waiting for 5 seconds
+```
+
+```
+## Retrying...
+```
+
+```
+## Attempt 2/5
+```
+
+```
+## Downloading data for 2004-01-01 2022-07-31
+```
+
+```
+## Server response: 429 - too many requests
+```
+
+```
+## Waiting for 5 seconds
+```
+
+```
+## Retrying...
+```
+
+```
+## Attempt 2/5
+```
+
+```
+## Downloading data for 2004-01-01 2022-07-31
+## Downloading data for 2004-01-01 2022-07-31
+```
+
+```
+## Server response: 429 - too many requests
+```
+
+```
+## Waiting for 5 seconds
+```
+
+```
+## Retrying...
+```
+
+```
+## Attempt 2/5
+```
+
+```r
+##Downloading detailed and consistent data with TrendEcon and saving it as CSV
+
+##dc_clearblue <- ts_gtrends_mwd(c("ClearBlue"), geo = "FI")
+```
+
