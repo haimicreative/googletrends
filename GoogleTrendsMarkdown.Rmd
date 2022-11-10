@@ -2,7 +2,9 @@
 title: "Google Trends and Births"
 author: "Pekka Haimi"
 date: "2022-11-10"
-output: html_document
+output: 
+  html_document: 
+    keep_md: yes
 ---
 
 ```{r setup, include=FALSE}
