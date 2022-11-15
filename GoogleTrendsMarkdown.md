@@ -293,7 +293,6 @@ raskaustesti_sa <- read_csv("raw/fi/raskaustesti_sa.csv", col_types = cols(time 
 raskaustesti_sa$month <- floor_date(raskaustesti_sa$time, "month")
 raskaustesti_monthly <- (raskaustesti_sa %>% group_by(month) %>% summarize(mean = mean(value)))
 
-
 clearblue_sa <- read_csv("raw/fi/clearblue_sa.csv", col_types = cols(time=col_date(format = "%Y-%m-%d")))
 clearblue_sa$month <- floor_date(clearblue_sa$time, "month")
 clearblue_monthly <- (clearblue_sa %>% group_by(month) %>% summarize(mean = mean(value)))
@@ -301,7 +300,6 @@ clearblue_monthly <- (clearblue_sa %>% group_by(month) %>% summarize(mean = mean
 ovulaatiotesti_sa <- read_csv("raw/fi/ovulaatiotesti_sa.csv", col_types = cols(time=col_date(format = "%Y-%m-%d")))
 ovulaatiotesti_sa$month <- floor_date(ovulaatiotesti_sa$time, "month")
 ovulaatiotesti_monthly <- (ovulaatiotesti_sa %>% group_by(month) %>% summarize(mean = mean(value)))
-
 
 raskauspahoinvointi_sa <- read_csv("raw/fi/raskauspahoinvointi_sa.csv", col_types = cols(time=col_date(format = "%Y-%m-%d")))
 raskauspahoinvointi_sa$month <- floor_date(raskauspahoinvointi_sa$time, "month")
@@ -343,15 +341,15 @@ syntyvyysindeksi %>% group_by(month) %>% summarize(mean = mean(value))
 ## # A tibble: 203 × 2
 ##    month        mean
 ##    <date>      <dbl>
-##  1 2006-01-01 -2.48 
-##  2 2006-02-01 -0.873
+##  1 2006-01-01 -2.45 
+##  2 2006-02-01 -0.872
 ##  3 2006-03-01 -1.72 
-##  4 2006-04-01 -1.20 
+##  4 2006-04-01 -1.18 
 ##  5 2006-05-01 -1.47 
-##  6 2006-06-01 -1.12 
-##  7 2006-07-01 -0.242
-##  8 2006-08-01 -0.210
-##  9 2006-09-01 -1.46 
+##  6 2006-06-01 -1.10 
+##  7 2006-07-01 -0.229
+##  8 2006-08-01 -0.201
+##  9 2006-09-01 -1.48 
 ## 10 2006-10-01 -1.45 
 ## # … with 193 more rows
 ```
