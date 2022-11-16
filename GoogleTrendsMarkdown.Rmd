@@ -2,8 +2,8 @@
 title: "Google Trends and Births"
 author: "Pekka Haimi"
 date: "2022-11-10"
-output: 
-  html_document: 
+output:
+  html_document:
     keep_md: yes
 ---
 This is analysis part of Master Thesis written by Pekka Haimi.  
@@ -13,12 +13,19 @@ Aim of the analysis:
 
 + Download Google Trends data with the TrendEcon package for individual keywords
 
-+ Aggregate Google Trends data from daily to monthly level
++ Aggregate Google Trends data from daily to monthly level 
+
++ Creating index of multiple keywords
+
++ Plotting all data
+
+Next steps are creating forecasting model and testing if individual keywords and the composite index make it more accurate
  
 
-Importing birth data, decomposing and seasonally adjusting it
-```{r}
-## Loading needed libraries
+
+### Loading needed libraries
+
+```{r,echo=TRUE, message=FALSE}
 library(trendecon)
 library(rmarkdown)
 library(ggplot2)
@@ -26,51 +33,67 @@ library(prophet)
 library(lubridate)
 library(dplyr)
 library(tidyverse)
+```
 
-## Importing birth and population data
+### Importing birth and population data
+
+```{r,echo=TRUE, message=FALSE}
 birthdata <- read_csv("birthsandpopulationY04Y22.csv",  col_types = cols(timestamp = col_date(format = "%Y-%m-%d")))
 ggplot(birthdata, aes(x=timestamp, y=total)) + geom_line() + labs(x="time", y="Number of births", title="Total number of births monthly") 
 ggplot(birthdata, aes(x=timestamp, y=first)) + geom_line() + labs(x="time", y="Number of births", title="Number of firstborns monthly") 
+```
 
-#decomposing total births
+### Decomposing total births and firstborns
+```{r,echo=TRUE, message=FALSE}
 births_total<-birthdata$total
 births_total <- ts(births_total,start=c(2004,1),end=c(2022,7),frequency=12)
 decomp_births_total <- decompose(births_total)
 plot(decomp_births_total)
 
-#seasonally adjusting total births
-births_total_seasonadj <- births_total - decomp_births_total$seasonal
-plot.ts(births_total_seasonadj)
-
-#decomposing firstborns
 births_firstborn<-birthdata$first
 births_firstborn <- ts(births_firstborn,start=c(2004,1),end=c(2022,7),frequency=12)
 decomp_births_firstborn <- decompose(births_firstborn)
 plot(decomp_births_firstborn)
+```
 
-#seasonally adjusting firstborns
+
+### Seasonally adjusting total births and comparing it to unadjusted data
+```{r,echo=TRUE, message=FALSE}
+
+births_total_seasonadj <- births_total - decomp_births_total$seasonal
+plot.ts(births_total_seasonadj)
+ggplot(birthdata, aes(x=timestamp, y=total)) + geom_line() + labs(x="time", y="Number of births", title="Total number of births monthly") 
+```
+
+### Seasonally adjusting firstborns and comparing it to unadjusted data
+```{r,echo=TRUE, message=FALSE}
 births_firstborn_seasonadj <- births_firstborn - decomp_births_firstborn$seasonal
 plot.ts(births_firstborn_seasonadj)
+ggplot(birthdata, aes(x=timestamp, y=first)) + geom_line() + labs(x="time", y="Number of births", title="Number of firstborns monthly") 
 
 ```
 
-Downloading Google trends data for specified keywords and adjusting the seasonality with TrendEcon package
 
-```{r}
+### Downloading Google trends data for specified keywords and adjusting the seasonality with TrendEcon package
 
-#Downloading raw data
+```{r,echo=TRUE, message=FALSE, eval=FALSE}
+## Downloading raw data
 
-#proc_keyword_init("raskaustesti", "FI")
-#proc_keyword_init("clearblue", "FI")
-#proc_keyword_init("ovulaatiotesti","FI")
-#proc_keyword_init("raskauspahoinvointi","FI")
+proc_keyword_init("raskaustesti", "FI")
+proc_keyword_init("clearblue", "FI")
+proc_keyword_init("ovulaatiotesti","FI")
+proc_keyword_init("raskauspahoinvointi","FI")
+```
 
 ### Creating composite index of the birth keywords
+```{r,echo=TRUE, message=FALSE, cache=TRUE}
 kw_syntyvyys <- c("raskaustesti","clearblue","ovulaatiotesti","raskauspahoinvointi")
 
-proc_index(kw_syntyvyys,"FI","syntyvyysindex")
+#proc_index(kw_syntyvyys,"FI","syntyvyysindex")
+```
 
-###Importing seasonally adjusted data for keywords
+### Importing seasonally adjusted data of keywords and turning it to monthly data
+```{r,echo=TRUE, message=FALSE}
 raskaustesti_sa <- read_csv("raw/fi/raskaustesti_sa.csv", col_types = cols(time = col_date(format = "%Y-%m-%d")))
 raskaustesti_sa$month <- floor_date(raskaustesti_sa$time, "month")
 raskaustesti_monthly <- (raskaustesti_sa %>% group_by(month) %>% summarize(mean = mean(value)))
@@ -86,14 +109,18 @@ ovulaatiotesti_monthly <- (ovulaatiotesti_sa %>% group_by(month) %>% summarize(m
 raskauspahoinvointi_sa <- read_csv("raw/fi/raskauspahoinvointi_sa.csv", col_types = cols(time=col_date(format = "%Y-%m-%d")))
 raskauspahoinvointi_sa$month <- floor_date(raskauspahoinvointi_sa$time, "month")
 raskauspahoinvointi_monthly <- (raskauspahoinvointi_sa %>% group_by(month) %>% summarize(mean = mean(value)))
+```
 
-##Plotting the individual seasonally adjusted keywords
-ggplot(raskaustesti_monthly, aes(x=month,y=mean)) + geom_line()
-ggplot(clearblue_monthly, aes(x=month,y=mean)) + geom_line()
-ggplot(ovulaatiotesti_monthly, aes(x=month,y=mean)) + geom_line()
-ggplot(raskauspahoinvointi_monthly, aes(x=month,y=mean)) + geom_line()
+### Plotting the individual seasonally adjusted keywords on monthly level
+```{r,echo=TRUE, message=FALSE}
+ggplot(raskaustesti_monthly, aes(x=month,y=mean)) + labs(title="Seasonally adjusted keyword index for raskaustesti") + geom_line()
+ggplot(clearblue_monthly, aes(x=month,y=mean)) + labs(title="Seasonally adjusted keyword index for clearblue") + geom_line()
+ggplot(ovulaatiotesti_monthly, aes(x=month,y=mean)) + labs(title="Seasonally adjusted keyword index for ovulaatiotesti") + geom_line()
+ggplot(raskauspahoinvointi_monthly, aes(x=month,y=mean)) + labs(title="Seasonally adjusted keyword index for raskauspahoinvointi") + geom_line()
+```
 
-#Creating index for births and plotting it
+### Creating index for multiple keywords and plotting the index and for comparison the total births index
+```{r,echo=TRUE, message=FALSE}
 syntyvyysindeksi <- read_csv("raw/fi/syntyvyysindex_sa.csv", col_types = cols(time = col_date(format = "%Y-%m-%d"), 
                                                                               value = col_number()))
 syntyvyysindeksi$month <- floor_date(syntyvyysindeksi$time, "month")
@@ -101,7 +128,8 @@ syntyvyysindeksi %>% group_by(month) %>% summarize(mean = mean(value))
 
 syntyvyysindeksi_monthly <- (syntyvyysindeksi %>% group_by(month) %>% summarize(mean = mean(value)))
 
-ggplot(syntyvyysindeksi_monthly, aes(x=month,y=mean)) + geom_line()
+ggplot(syntyvyysindeksi_monthly, aes(x=month,y=mean)) + labs(title="Seasonally adjusted index for birth related keywords") + geom_line()
+plot.ts(births_total_seasonadj)
 
 ```
 

@@ -2,8 +2,8 @@
 title: "Google Trends and Births"
 author: "Pekka Haimi"
 date: "2022-11-10"
-output: 
-  html_document: 
+output:
+  html_document:
     keep_md: yes
 ---
 This is analysis part of Master Thesis written by Pekka Haimi.  
@@ -13,282 +13,120 @@ Aim of the analysis:
 
 + Download Google Trends data with the TrendEcon package for individual keywords
 
-+ Aggregate Google Trends data from daily to monthly level
++ Aggregate Google Trends data from daily to monthly level 
+
++ Creating index of multiple keywords
+
++ Plotting all data
+
+Next steps are creating forecasting model and testing if individual keywords and the composite index make it more accurate
  
 
-Importing birth data, decomposing and seasonally adjusting it
+
+### Loading needed libraries
+
 
 ```r
-## Loading needed libraries
 library(trendecon)
 library(rmarkdown)
 library(ggplot2)
 library(prophet)
-```
-
-```
-## Loading required package: Rcpp
-```
-
-```
-## Loading required package: rlang
-```
-
-```r
 library(lubridate)
-```
-
-```
-## Loading required package: timechange
-```
-
-```
-## 
-## Attaching package: 'lubridate'
-```
-
-```
-## The following objects are masked from 'package:base':
-## 
-##     date, intersect, setdiff, union
-```
-
-```r
 library(dplyr)
-```
-
-```
-## 
-## Attaching package: 'dplyr'
-```
-
-```
-## The following objects are masked from 'package:stats':
-## 
-##     filter, lag
-```
-
-```
-## The following objects are masked from 'package:base':
-## 
-##     intersect, setdiff, setequal, union
-```
-
-```r
 library(tidyverse)
 ```
 
-```
-## ── Attaching packages
-## ───────────────────────────────────────
-## tidyverse 1.3.2 ──
-```
+### Importing birth and population data
 
-```
-## ✔ tibble  3.1.8     ✔ purrr   0.3.5
-## ✔ tidyr   1.2.1     ✔ stringr 1.4.1
-## ✔ readr   2.1.3     ✔ forcats 0.5.2
-## ── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──
-## ✖ purrr::%@%()             masks rlang::%@%()
-## ✖ purrr::as_function()     masks rlang::as_function()
-## ✖ lubridate::as.difftime() masks base::as.difftime()
-## ✖ lubridate::date()        masks base::date()
-## ✖ dplyr::filter()          masks stats::filter()
-## ✖ purrr::flatten()         masks rlang::flatten()
-## ✖ purrr::flatten_chr()     masks rlang::flatten_chr()
-## ✖ purrr::flatten_dbl()     masks rlang::flatten_dbl()
-## ✖ purrr::flatten_int()     masks rlang::flatten_int()
-## ✖ purrr::flatten_lgl()     masks rlang::flatten_lgl()
-## ✖ purrr::flatten_raw()     masks rlang::flatten_raw()
-## ✖ lubridate::intersect()   masks base::intersect()
-## ✖ purrr::invoke()          masks rlang::invoke()
-## ✖ dplyr::lag()             masks stats::lag()
-## ✖ lubridate::setdiff()     masks base::setdiff()
-## ✖ purrr::splice()          masks rlang::splice()
-## ✖ lubridate::union()       masks base::union()
-```
 
 ```r
-## Importing birth and population data
 birthdata <- read_csv("birthsandpopulationY04Y22.csv",  col_types = cols(timestamp = col_date(format = "%Y-%m-%d")))
 ggplot(birthdata, aes(x=timestamp, y=total)) + geom_line() + labs(x="time", y="Number of births", title="Total number of births monthly") 
 ```
 
-![](GoogleTrendsMarkdown_files/figure-html/unnamed-chunk-1-1.png)<!-- -->
+![](GoogleTrendsMarkdown_files/figure-html/unnamed-chunk-2-1.png)<!-- -->
 
 ```r
 ggplot(birthdata, aes(x=timestamp, y=first)) + geom_line() + labs(x="time", y="Number of births", title="Number of firstborns monthly") 
 ```
 
-![](GoogleTrendsMarkdown_files/figure-html/unnamed-chunk-1-2.png)<!-- -->
+![](GoogleTrendsMarkdown_files/figure-html/unnamed-chunk-2-2.png)<!-- -->
+
+### Decomposing total births and firstborns
 
 ```r
-#decomposing total births
 births_total<-birthdata$total
 births_total <- ts(births_total,start=c(2004,1),end=c(2022,7),frequency=12)
 decomp_births_total <- decompose(births_total)
 plot(decomp_births_total)
 ```
 
-![](GoogleTrendsMarkdown_files/figure-html/unnamed-chunk-1-3.png)<!-- -->
+![](GoogleTrendsMarkdown_files/figure-html/unnamed-chunk-3-1.png)<!-- -->
 
 ```r
-#seasonally adjusting total births
-births_total_seasonadj <- births_total - decomp_births_total$seasonal
-plot.ts(births_total_seasonadj)
-```
-
-![](GoogleTrendsMarkdown_files/figure-html/unnamed-chunk-1-4.png)<!-- -->
-
-```r
-#decomposing firstborns
 births_firstborn<-birthdata$first
 births_firstborn <- ts(births_firstborn,start=c(2004,1),end=c(2022,7),frequency=12)
 decomp_births_firstborn <- decompose(births_firstborn)
 plot(decomp_births_firstborn)
 ```
 
-![](GoogleTrendsMarkdown_files/figure-html/unnamed-chunk-1-5.png)<!-- -->
+![](GoogleTrendsMarkdown_files/figure-html/unnamed-chunk-3-2.png)<!-- -->
+
+
+### Seasonally adjusting total births and comparing it to unadjusted data
 
 ```r
-#seasonally adjusting firstborns
+births_total_seasonadj <- births_total - decomp_births_total$seasonal
+plot.ts(births_total_seasonadj)
+```
+
+![](GoogleTrendsMarkdown_files/figure-html/unnamed-chunk-4-1.png)<!-- -->
+
+```r
+ggplot(birthdata, aes(x=timestamp, y=total)) + geom_line() + labs(x="time", y="Number of births", title="Total number of births monthly") 
+```
+
+![](GoogleTrendsMarkdown_files/figure-html/unnamed-chunk-4-2.png)<!-- -->
+
+### Seasonally adjusting firstborns and comparing it to unadjusted data
+
+```r
 births_firstborn_seasonadj <- births_firstborn - decomp_births_firstborn$seasonal
 plot.ts(births_firstborn_seasonadj)
 ```
 
-![](GoogleTrendsMarkdown_files/figure-html/unnamed-chunk-1-6.png)<!-- -->
+![](GoogleTrendsMarkdown_files/figure-html/unnamed-chunk-5-1.png)<!-- -->
 
-Downloading Google trends data for specified keywords and adjusting the seasonality with TrendEcon package
+```r
+ggplot(birthdata, aes(x=timestamp, y=first)) + geom_line() + labs(x="time", y="Number of births", title="Number of firstborns monthly") 
+```
+
+![](GoogleTrendsMarkdown_files/figure-html/unnamed-chunk-5-2.png)<!-- -->
+
+
+### Downloading Google trends data for specified keywords and adjusting the seasonality with TrendEcon package
 
 
 ```r
-#Downloading raw data
+## Downloading raw data
 
-#proc_keyword_init("raskaustesti", "FI")
-#proc_keyword_init("clearblue", "FI")
-#proc_keyword_init("ovulaatiotesti","FI")
-#proc_keyword_init("raskauspahoinvointi","FI")
+proc_keyword_init("raskaustesti", "FI")
+proc_keyword_init("clearblue", "FI")
+proc_keyword_init("ovulaatiotesti","FI")
+proc_keyword_init("raskauspahoinvointi","FI")
+```
 
 ### Creating composite index of the birth keywords
-kw_syntyvyys <- c("raskaustesti","clearblue","ovulaatiotesti","raskauspahoinvointi")
-
-proc_index(kw_syntyvyys,"FI","syntyvyysindex")
-```
-
-```
-## .latest_google_date: 2099-01-01
-```
-
-```
-## previous_google_date: 2022-11-15
-```
-
-```
-## Downloading keyword: raskaustesti
-```
-
-```
-## Downloading hourly data
-```
-
-```
-## Downloading data for now 7-d
-```
-
-```
-## Downloading daily data
-```
-
-```
-## Downloading data for 2022-08-17 2022-11-15
-```
-
-```
-## Downloading data for 2022-08-18 2022-11-15
-```
-
-```
-## Downloading weekly data
-```
-
-```
-## Downloading data for 2021-11-15 2022-11-15
-```
-
-```
-## Downloading data for 2021-11-22 2022-11-15
-```
-
-```
-## Downloading monthly data
-```
-
-```
-## Downloading data for 2006-01-01 2022-11-15
-```
-
-```
-## Downloading data for 2006-02-01 2022-11-15
-```
-
-```
-## combining frequencies of keyword: raskaustesti
-```
-
-```
-## extend daily data by hourly data for the missing recent days
-```
-
-```
-## align daily data to weekly
-```
-
-```
-## align weekly data to monthly
-```
-
-```
-## seasonal adjustment keyword: raskaustesti
-```
-
-```
-## .latest_google_date: 2022-11-15
-```
-
-```
-## previous_google_date: 2022-11-15
-```
-
-```
-## keyword clearblue already processed today. skipping.
-```
-
-```
-## .latest_google_date: 2022-11-15
-```
-
-```
-## previous_google_date: 2022-11-15
-```
-
-```
-## keyword ovulaatiotesti already processed today. skipping.
-```
-
-```
-## .latest_google_date: 2022-11-15
-```
-
-```
-## previous_google_date: 2022-11-15
-```
-
-```
-## keyword raskauspahoinvointi already processed today. skipping.
-```
 
 ```r
-###Importing seasonally adjusted data for keywords
+kw_syntyvyys <- c("raskaustesti","clearblue","ovulaatiotesti","raskauspahoinvointi")
+
+#proc_index(kw_syntyvyys,"FI","syntyvyysindex")
+```
+
+### Importing seasonally adjusted data of keywords and turning it to monthly data
+
+```r
 raskaustesti_sa <- read_csv("raw/fi/raskaustesti_sa.csv", col_types = cols(time = col_date(format = "%Y-%m-%d")))
 raskaustesti_sa$month <- floor_date(raskaustesti_sa$time, "month")
 raskaustesti_monthly <- (raskaustesti_sa %>% group_by(month) %>% summarize(mean = mean(value)))
@@ -304,33 +142,37 @@ ovulaatiotesti_monthly <- (ovulaatiotesti_sa %>% group_by(month) %>% summarize(m
 raskauspahoinvointi_sa <- read_csv("raw/fi/raskauspahoinvointi_sa.csv", col_types = cols(time=col_date(format = "%Y-%m-%d")))
 raskauspahoinvointi_sa$month <- floor_date(raskauspahoinvointi_sa$time, "month")
 raskauspahoinvointi_monthly <- (raskauspahoinvointi_sa %>% group_by(month) %>% summarize(mean = mean(value)))
-
-##Plotting the individual seasonally adjusted keywords
-ggplot(raskaustesti_monthly, aes(x=month,y=mean)) + geom_line()
 ```
 
-![](GoogleTrendsMarkdown_files/figure-html/unnamed-chunk-2-1.png)<!-- -->
+### Plotting the individual seasonally adjusted keywords on monthly level
 
 ```r
-ggplot(clearblue_monthly, aes(x=month,y=mean)) + geom_line()
+ggplot(raskaustesti_monthly, aes(x=month,y=mean)) + labs(title="Seasonally adjusted keyword index for raskaustesti") + geom_line()
 ```
 
-![](GoogleTrendsMarkdown_files/figure-html/unnamed-chunk-2-2.png)<!-- -->
+![](GoogleTrendsMarkdown_files/figure-html/unnamed-chunk-9-1.png)<!-- -->
 
 ```r
-ggplot(ovulaatiotesti_monthly, aes(x=month,y=mean)) + geom_line()
+ggplot(clearblue_monthly, aes(x=month,y=mean)) + labs(title="Seasonally adjusted keyword index for clearblue") + geom_line()
 ```
 
-![](GoogleTrendsMarkdown_files/figure-html/unnamed-chunk-2-3.png)<!-- -->
+![](GoogleTrendsMarkdown_files/figure-html/unnamed-chunk-9-2.png)<!-- -->
 
 ```r
-ggplot(raskauspahoinvointi_monthly, aes(x=month,y=mean)) + geom_line()
+ggplot(ovulaatiotesti_monthly, aes(x=month,y=mean)) + labs(title="Seasonally adjusted keyword index for ovulaatiotesti") + geom_line()
 ```
 
-![](GoogleTrendsMarkdown_files/figure-html/unnamed-chunk-2-4.png)<!-- -->
+![](GoogleTrendsMarkdown_files/figure-html/unnamed-chunk-9-3.png)<!-- -->
 
 ```r
-#Creating index for births and plotting it
+ggplot(raskauspahoinvointi_monthly, aes(x=month,y=mean)) + labs(title="Seasonally adjusted keyword index for raskauspahoinvointi") + geom_line()
+```
+
+![](GoogleTrendsMarkdown_files/figure-html/unnamed-chunk-9-4.png)<!-- -->
+
+### Creating index for multiple keywords and plotting the index and for comparison the total births index
+
+```r
 syntyvyysindeksi <- read_csv("raw/fi/syntyvyysindex_sa.csv", col_types = cols(time = col_date(format = "%Y-%m-%d"), 
                                                                               value = col_number()))
 syntyvyysindeksi$month <- floor_date(syntyvyysindeksi$time, "month")
@@ -339,26 +181,32 @@ syntyvyysindeksi %>% group_by(month) %>% summarize(mean = mean(value))
 
 ```
 ## # A tibble: 203 × 2
-##    month        mean
-##    <date>      <dbl>
-##  1 2006-01-01 -2.45 
-##  2 2006-02-01 -0.872
-##  3 2006-03-01 -1.72 
-##  4 2006-04-01 -1.18 
-##  5 2006-05-01 -1.47 
-##  6 2006-06-01 -1.10 
-##  7 2006-07-01 -0.229
-##  8 2006-08-01 -0.201
-##  9 2006-09-01 -1.48 
-## 10 2006-10-01 -1.45 
+##    month         mean
+##    <date>       <dbl>
+##  1 2006-01-01 -2.10  
+##  2 2006-02-01 -1.20  
+##  3 2006-03-01 -1.85  
+##  4 2006-04-01 -0.976 
+##  5 2006-05-01 -1.14  
+##  6 2006-06-01 -1.15  
+##  7 2006-07-01  0.0155
+##  8 2006-08-01 -0.215 
+##  9 2006-09-01 -0.685 
+## 10 2006-10-01 -1.19  
 ## # … with 193 more rows
 ```
 
 ```r
 syntyvyysindeksi_monthly <- (syntyvyysindeksi %>% group_by(month) %>% summarize(mean = mean(value)))
 
-ggplot(syntyvyysindeksi_monthly, aes(x=month,y=mean)) + geom_line()
+ggplot(syntyvyysindeksi_monthly, aes(x=month,y=mean)) + labs(title="Seasonally adjusted index for birth related keywords") + geom_line()
 ```
 
-![](GoogleTrendsMarkdown_files/figure-html/unnamed-chunk-2-5.png)<!-- -->
+![](GoogleTrendsMarkdown_files/figure-html/unnamed-chunk-10-1.png)<!-- -->
+
+```r
+plot.ts(births_total_seasonadj)
+```
+
+![](GoogleTrendsMarkdown_files/figure-html/unnamed-chunk-10-2.png)<!-- -->
 
