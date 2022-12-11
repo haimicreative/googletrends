@@ -33,6 +33,7 @@ library(prophet)
 library(lubridate)
 library(dplyr)
 library(tidyverse)
+library(plotly)
 ```
 
 ### Importing birth and population data
@@ -132,4 +133,36 @@ ggplot(syntyvyysindeksi_monthly, aes(x=month,y=mean)) + labs(title="Seasonally a
 plot.ts(births_total_seasonadj)
 
 ```
+
+### Joining data
+```{r,echo=TRUE, message=FALSE}
+combined <- syntyvyysindeksi_monthly %>% left_join(raskauspahoinvointi_monthly, by = c("month"="month"))
+
+
+combined %>% plot_ly(., x = ~month) %>% 
+  add_trace(y = ~mean.x, name = 'syntyvyys',mode = 'lines') %>% 
+  add_trace(y = ~mean.y, name = 'raskaustesti',mode = 'lines', yaxis="y2") %>% 
+  layout(yaxis2=list(overlaying="y", side="right"))
+
+
+combined_chart <- 
+
+
+
+scaleFactor <- max(combined$mean.x) / max(combined$mean.y)
+
+sec <- with(combined, train_sec(c(0, max(unemploy)),
+
+                                
+                                                                 c(0, max(psavert))))
+
+combined %>% ggplot(., aes(x=month)) +
+  geom_line(aes(y = mean.x), colour = "blue") +
+  geom_line(aes(y = mean.y), colour = "red") +
+  scale_y_continuous(name="mean.x", sec.axis=sec_axis(~./scaleFactor, name="mean.y"))
+  
+ggplot(combined, aes(x=month,y=mean)) + labs(title="Seasonally adjusted index for birth related keywords") + geom_line()
+```
+
+### Selvitä lagin määrä, librarynä forecast aikasarjalla, miten performoi, selittävillä muuttujilla,
 

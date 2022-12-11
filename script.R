@@ -38,7 +38,7 @@ plot(decomp_births_total)
 #seasonally adjusting total births
 births_total_seasonadj <- births_total - decomp_births_total$seasonal
 plot.ts(births_total_seasonadj)
-
+View(births_total_seasonadj)
 #decomposing firstborns
 births_firstborn<-birthdata$first
 births_firstborn <- ts(births_firstborn,start=c(2004,1),end=c(2022,7),frequency=12)
