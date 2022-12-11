@@ -34,6 +34,7 @@ library(lubridate)
 library(dplyr)
 library(tidyverse)
 library(plotly)
+library(zoo)
 ```
 
 ### Importing birth and population data
@@ -72,6 +73,8 @@ births_firstborn_seasonadj <- births_firstborn - decomp_births_firstborn$seasona
 plot.ts(births_firstborn_seasonadj)
 ggplot(birthdata, aes(x=timestamp, y=first)) + geom_line() + labs(x="time", y="Number of births", title="Number of firstborns monthly") 
 
+nt_births_firstborn <- births_firstborn - decomp_births_firstborn$trend
+plot(nt_births_firstborn)
 ```
 
 
@@ -95,22 +98,46 @@ kw_syntyvyys <- c("raskaustesti","clearblue","ovulaatiotesti","raskauspahoinvoin
 
 ### Importing seasonally adjusted data of keywords and turning it to monthly data
 ```{r,echo=TRUE, message=FALSE}
-raskaustesti_sa <- read_csv("raw/fi/raskaustesti_sa.csv", col_types = cols(time = col_date(format = "%Y-%m-%d")))
-raskaustesti_sa$month <- floor_date(raskaustesti_sa$time, "month")
-raskaustesti_monthly <- (raskaustesti_sa %>% group_by(month) %>% summarize(mean = mean(value)))
 
-clearblue_sa <- read_csv("raw/fi/clearblue_sa.csv", col_types = cols(time=col_date(format = "%Y-%m-%d")))
-clearblue_sa$month <- floor_date(clearblue_sa$time, "month")
-clearblue_monthly <- (clearblue_sa %>% group_by(month) %>% summarize(mean = mean(value)))
 
-ovulaatiotesti_sa <- read_csv("raw/fi/ovulaatiotesti_sa.csv", col_types = cols(time=col_date(format = "%Y-%m-%d")))
-ovulaatiotesti_sa$month <- floor_date(ovulaatiotesti_sa$time, "month")
-ovulaatiotesti_monthly <- (ovulaatiotesti_sa %>% group_by(month) %>% summarize(mean = mean(value)))
+raskaustesti_OGM <- read_csv("raw/fi/raskaustesti_m.csv", col_types = cols(time = col_date(format = "%Y-%m-%d")))
+clearblue_OGM <- read_csv("raw/fi/clearblue_m.csv", col_types = cols(time = col_date(format = "%Y-%m-%d")))
+ovulaatiotesti_OGM <- read_csv("raw/fi/ovulaatiotesti_m.csv", col_types = cols(time = col_date(format = "%Y-%m-%d")))
+raskauspahoinvointi_OGM <- read_csv("raw/fi/raskauspahoinvointi_m.csv", col_types = cols(time = col_date(format = "%Y-%m-%d")))
 
-raskauspahoinvointi_sa <- read_csv("raw/fi/raskauspahoinvointi_sa.csv", col_types = cols(time=col_date(format = "%Y-%m-%d")))
-raskauspahoinvointi_sa$month <- floor_date(raskauspahoinvointi_sa$time, "month")
-raskauspahoinvointi_monthly <- (raskauspahoinvointi_sa %>% group_by(month) %>% summarize(mean = mean(value)))
 ```
+### Decomposing keywords and removing the trend component of the series
+```{r,echo=TRUE, message=FALSE}
+
+sa_kw_raskaustestiOG <- raskaustesti_OGM$value
+sa_kw_raskaustestiOG <- ts(sa_kw_raskaustestiOG, start=c(2006,1),end=c(2022,11),frequency=12)
+dc_kw_raskaustestiOG <- decompose(sa_kw_raskaustestiOG)
+plot(dc_kw_raskaustestiOG)
+nt_kw_raskaustesti <- sa_kw_raskaustestiOG - dc_kw_raskaustestiOG$trend
+nt_kw_L9_raskaustesti <- lag(nt_kw_raskaustesti,9)
+plot(nt_kw_raskaustesti)
+
+sa_kw_clearblueOG <- clearblue_OGM$value
+sa_kw_clearblueOG <- ts(sa_kw_clearblueOG, start=c(2006,1),end=c(2022,11),frequency=12)
+dc_kw_clearblueOG <- decompose(sa_kw_clearblueOG)
+nt_kw_clearblue <- sa_kw_clearblueOG - dc_kw_clearblueOG$trend
+plot(dc_kw_clearblueOG)
+
+sa_kw_ovulaatiotestiOG <- ovulaatiotesti_OGM$value
+sa_kw_ovulaatiotestiOG <- ts(sa_kw_ovulaatiotestiOG, start=c(2006,1),end=c(2022,11),frequency=12)
+dc_kw_ovulaatiotestiOG <- decompose(sa_kw_ovulaatiotestiOG)
+nt_kw_ovulaatiotesti <- sa_kw_ovulaatiotestiOG - dc_kw_ovulaatiotestiOG$trend
+plot(dc_kw_ovulaatiotestiOG)
+
+sa_kw_raskauspahoinvointiOG <- raskauspahoinvointi_OGM$value
+sa_kw_raskauspahoinvointiOG <- ts(sa_kw_raskauspahoinvointiOG, start=c(2006,1),end=c(2022,11),frequency=12)
+dc_kw_raskauspahoinvointiOG <- decompose(sa_kw_raskauspahoinvointiOG)
+nt_kw_raskauspahoinvointi <- sa_kw_raskauspahoinvointiOG - dc_kw_raskauspahoinvointiOG$trend
+plot(dc_kw_raskauspahoinvointiOG)
+
+```
+
+
 
 ### Plotting the individual seasonally adjusted keywords on monthly level
 ```{r,echo=TRUE, message=FALSE}
@@ -134,34 +161,60 @@ plot.ts(births_total_seasonadj)
 
 ```
 
-### Joining data
+
+
+### Joining data and adding lags
 ```{r,echo=TRUE, message=FALSE}
-combined <- syntyvyysindeksi_monthly %>% left_join(raskauspahoinvointi_monthly, by = c("month"="month"))
+df_nt_births_firstborn <- data.frame(firstborns=as.matrix(nt_births_firstborn),time=as.Date(as.yearmon(time(nt_births_firstborn))))
+
+df_nt_kw_raskaustesti <- data.frame(kw_raskaustesti=as.matrix(nt_kw_raskaustesti),time=as.Date(as.yearmon(time(nt_kw_raskaustesti))))
+df_nt_kw_clearblue <- data.frame(kw_clearblue=as.matrix(nt_kw_clearblue),time=as.Date(as.yearmon(time(nt_kw_clearblue))))
+df_nt_kw_ovulaatiotesti <- data.frame(kw_ovulaatiotesti=as.matrix(nt_kw_ovulaatiotesti),time=as.Date(as.yearmon(time(nt_kw_ovulaatiotesti))))
+df_nt_kw_raskauspahoinvointi <- data.frame(kw_raskauspahoinvointi=as.matrix(nt_kw_raskauspahoinvointi),time=as.Date(as.yearmon(time(nt_kw_raskauspahoinvointi))))
+
+df <- df_nt_births_firstborn %>% left_join(df_nt_kw_raskaustesti, by = c("time"="time"))
+df <- df %>% left_join(df_nt_kw_clearblue,by=c("time"="time"))
+df <- df %>% left_join(df_nt_kw_ovulaatiotesti,by=c("time"="time"))
+df <- df %>% left_join(df_nt_kw_raskauspahoinvointi,by=c("time"="time"))
 
 
-combined %>% plot_ly(., x = ~month) %>% 
-  add_trace(y = ~mean.x, name = 'syntyvyys',mode = 'lines') %>% 
-  add_trace(y = ~mean.y, name = 'raskaustesti',mode = 'lines', yaxis="y2") %>% 
+df %>% plot_ly(., x = ~time) %>% 
+  add_trace(y = ~firstborns, name = 'esikoiset',mode = 'lines') %>% 
+  add_trace(y = ~kw_raskaustesti, name = 'raskaustesti',mode = 'lines', yaxis="y2") %>% 
+  layout(yaxis2=list(overlaying="y", side="right"))
+
+df %>% plot_ly(., x = ~time) %>% 
+  add_trace(y = ~firstborns, name = 'esikoiset',mode = 'lines') %>% 
+  add_trace(y = ~kw_clearblue, name = 'clearblue',mode = 'lines', yaxis="y2") %>% 
+  layout(yaxis2=list(overlaying="y", side="right"))
+
+df %>% plot_ly(., x = ~time) %>% 
+  add_trace(y = ~firstborns, name = 'esikoiset',mode = 'lines') %>% 
+  add_trace(y = ~kw_ovulaatiotesti, name = 'ovulaatiotesti',mode = 'lines', yaxis="y2") %>% 
+  layout(yaxis2=list(overlaying="y", side="right"))
+
+df %>% plot_ly(., x = ~time) %>% 
+  add_trace(y = ~firstborns, name = 'esikoiset',mode = 'lines') %>% 
+  add_trace(y = ~kw_raskauspahoinvointi, name = 'raskauspahoinvointi',mode = 'lines', yaxis="y2") %>% 
   layout(yaxis2=list(overlaying="y", side="right"))
 
 
-combined_chart <- 
+df2 <- df
+
+
+df2 <- df2 %>%                           
+  mutate(kw_L9_raskaustesti = lag(kw_raskaustesti, n=9,))
+
+
+df2 %>% plot_ly(., x = ~time) %>% 
+  add_trace(y = ~firstborns, name = 'esikoiset',mode = 'lines') %>% 
+  add_trace(y = ~kw_L9_raskaustesti, name = 'raskaustesti',mode = 'lines', yaxis="y2") %>% 
+  layout(yaxis2=list(overlaying="y", side="right"))
 
 
 
-scaleFactor <- max(combined$mean.x) / max(combined$mean.y)
+transform(df2,kw_L9_raskaustesti=c(kw_raskaustesti[9],NA))
 
-sec <- with(combined, train_sec(c(0, max(unemploy)),
-
-                                
-                                                                 c(0, max(psavert))))
-
-combined %>% ggplot(., aes(x=month)) +
-  geom_line(aes(y = mean.x), colour = "blue") +
-  geom_line(aes(y = mean.y), colour = "red") +
-  scale_y_continuous(name="mean.x", sec.axis=sec_axis(~./scaleFactor, name="mean.y"))
-  
-ggplot(combined, aes(x=month,y=mean)) + labs(title="Seasonally adjusted index for birth related keywords") + geom_line()
 ```
 
 ### Selvitä lagin määrä, librarynä forecast aikasarjalla, miten performoi, selittävillä muuttujilla,
