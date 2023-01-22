@@ -21,7 +21,30 @@ Aim of the analysis:
 
 Next steps are creating forecasting model and testing if individual keywords and the composite index make it more accurate
  
+library(tsDyn)
+library(prophet)
+library(lubridate)
+library(dplyr)
+library(tidyverse)
+library(plotly)
+library(zoo)
+library(tsibble)
 
+library(fpp3)
+library(dplyr)
+library(tidyverse)
+library(tidyquant)
+library(stargazer)
+
+library(vars)
+library(urca)
+library(tsDyn)
+library(apt) 
+library(timetk)
+library(readxl)
+library(kableExtra)
+library(grid)
+library(gridExtra)
 
 ### Loading needed libraries
 
@@ -29,40 +52,99 @@ Next steps are creating forecasting model and testing if individual keywords and
 library(trendecon)
 library(rmarkdown)
 library(ggplot2)
-library(prophet)
-library(lubridate)
-library(dplyr)
-library(tidyverse)
-library(plotly)
-library(zoo)
 library(forecast)
 library(gtrendsR)
-library(tidyquant)
-library(tsibble)
-library(lessR)
-library(timetk)
-library(tsDyn)
+library(tidyverse)
+library(fpp3)
+library(kableExtra)
+library(vars)
+
 ```
 
-### Importing birth and population data
+### Importing birth and population data and downloading keyword data
 
 ```{r,echo=TRUE, message=FALSE}
+dataset <- readr::read_csv("birthsandpopulationY04Y22.csv")
+
+          
+kw_raskaustesti_raw <- ts_gtrends("raskaustesti",time="2004-01-01 2022-11-30",geo='FI')
+kw_raskaustesti_raw <- rename(kw_raskaustesti_raw, raskaustesti = value)
+
+kw_raskausoireet_raw <- ts_gtrends("raskaus oireet",time="2004-01-01 2022-11-30",geo='FI')
+kw_raskausoireet_raw <- rename(kw_raskausoireet_raw, raskausoireet = value)
+
+kw_raskaana_raw <- ts_gtrends("raskaana",time="2004-01-01 2022-11-30",geo='FI')
+kw_raskaana_raw <- rename(kw_raskaana_raw,raskaana = value)
+
+keywords <- kw_raskaustesti_raw %>% left_join(kw_raskausoireet_raw, by = c("time"="time"))
+keywords <- keywords %>% left_join(kw_raskaana_raw, by = c("time"="time"))
+
+dataset <- dataset %>% left_join(keywords,by = c("timestamp"="time"))
+
+dataset <- dataset %>% 
+          mutate (Month = yearmonth(timestamp)) %>% 
+          dplyr::select(Month,first,total,raskaustesti,raskausoireet,raskaana) %>% 
+          as_tsibble(index = Month)
+
+autoplot(dataset)
+
+
+
+
 birthdata <- read_csv("birthsandpopulationY04Y22.csv",  col_types = cols(timestamp = col_date(format = "%Y-%m-%d")))
 ggplot(birthdata, aes(x=timestamp, y=total)) + geom_line() + labs(x="time", y="Number of births", title="Total number of births monthly") 
 ggplot(birthdata, aes(x=timestamp, y=first)) + geom_line() + labs(x="time", y="Number of births", title="Number of firstborns monthly") 
 ```
 
+### Order of analysis
 
+*Importing data
+*
 
 
 ### Decomposing total births and firstborns
 ```{r,echo=TRUE, message=FALSE}
 births_total<-birthdata$total
+
+##Plotting seasonal changes for total births
+
+birthdata %>% mutate(timestamp=yearmonth(timestamp)) %>%  
+  as_tsibble(index=timestamp) -> births_tsibble
+
+births_tsibble %>% gg_season(total,labels="both") +
+      labs(y="Total births",
+      title ="Seasonal changes of births")
+
+births_tsibble %>%
+  gg_subseries(total) +
+  labs(
+    y = "Total births",
+    title = "Seasonal changes of births")
+
+
 births_total <- ts(births_total,start=c(2004,1),end=c(2022,7),frequency=12)
 decomp_births_total <- decompose(births_total)
 plot(decomp_births_total)
 
+
+
+
 births_firstborn<-birthdata$first
+
+##Plotting seasonal changes for firstborns
+
+
+births_tsibble %>% gg_season(first,labels="both") +
+      labs(y="Firstborns",
+      title ="Seasonal changes of firstborns in Finland")
+
+
+births_tsibble %>%
+  gg_subseries(first) +
+  labs(
+    y = "Firstborns",
+    title = "Seasonal changes of firstborns in Finland")
+
 births_firstborn <- ts(births_firstborn,start=c(2004,1),end=c(2022,7),frequency=12)
 decomp_births_firstborn <- decompose(births_firstborn)
 plot(decomp_births_firstborn)
@@ -134,7 +216,9 @@ df <- df %>% left_join(kw_raskausoireet_raw, by = c("time"="time"))
 df <- df %>% left_join(kw_alkuraskaus_raw, by = c("time"="time"))
 
 df <- df %>% relocate(time)
-
+df<- transform(df, raskaustesti = as.numeric(raskaustesti), 
+                    raskausoireet = as.numeric(raskausoireet),
+               alkuraskaus = as.numeric(raskausoireet))
 
 
 df %>% plot_ly(., x = ~time) %>% 
@@ -144,6 +228,8 @@ df %>% plot_ly(., x = ~time) %>%
   add_trace(y = ~alkuraskaus, name = 'alkuraskaus',mode = 'lines', yaxis="y2") %>% 
 layout(yaxis2=list(overlaying="y", side="right"))
 
+df %>% mutate(time=yearmonth(time)) %>%  
+  as_tsibble(index=time) -> df
 
 
 df <- df %>%                           
@@ -157,7 +243,6 @@ df <- df %>%
 
 df <- df %>% filter(time >="2010-01-01")
 
-#rownames(df) <- df$time
 
 df %>% plot_ly(., x = ~time) %>% 
   add_trace(y = ~totalbirths, name = 'kaikkisyntyneet',mode = 'lines') %>% 
@@ -184,20 +269,86 @@ df %>%    ggplot(aes(x = time)) +
   theme(legend.position = "top", legend.title = element_blank())
 
 ```
+### Analysing seasonality of the birth data
+```{r,echo=TRUE, message=FALSE}
+
+autoplot(df)
+### Seasonal changes of keywords
+df %>% gg_season(raskaustesti,labels="both") +
+      labs(y="Raskaustesti",
+      title ="Raskaustesti")
+
+df %>%
+  gg_subseries(raskaustesti) +
+  labs(
+    y = "Raskaustesti",
+    title = "Seasonal changes of keyword raskaustesti")
+
+df %>%
+  gg_subseries(raskausoireet) +
+  labs(
+    y = "Raskausoireet",
+    title = "Seasonal changes of keyword raskausoireet")
+
+
+```
+
 ### Splitting dataset and building the model
 ```{r,echo=TRUE, message=FALSE}
+#Transforming data frame to tsibble
+df <- df %>% as_tsibble(index= time)
+
 train <- df %>% filter(time < '2021-01-01')
 test <- df %>% filter(time > '2020-12-01')
 
-
-
 fits <- train %>%
-model(
-    fit_naive = TSLM(log(firstborns) ~ 1 + lag(log(firstborns))),
+  model(
+    fit_naive = TSLM(log(totalbirths) ~ 1 + lag(log(totalbirths))),
     fit_GT     = TSLM(
-      log(firstborns ~ 1 + lag(log(firstborns)) + log(raskaustesti + 1) + log(raskausoireet + 1) + log(alkuraskaus + 1)
+      log(totalbirths) ~ 1 + lag(log(totalbirths)) + log(raskaustesti + 1) + log(raskausoireet + 1) + log(alkuraskaus + 1)
     )
-  ))
+  )
+
+tidy(fits)[, c(1, 2, 3, 4, 6)] %>%
+  kable(
+    format = "html",
+    table.attr = "style='width:75%;' ",
+    caption = "Model Estimation Results",
+    digits = 3
+  ) %>%
+  kable_classic_2(full_width = F)
+
+
+fits_split <- train %>%
+  model(
+    fit_GT_raskaustesti = TSLM(log(totalbirths) ~ 1 + lag(log(totalbirths)) + log(raskaustesti + 1)),
+    fit_GT_raskausoireet = TSLM(log(totalbirths) ~ 1 + lag(log(totalbirths)) + log(raskausoireet + 1)),
+    fit_GT_alkuraskaus = TSLM(log(totalbirths) ~ 1 + lag(log(totalbirths))+ log(alkuraskaus + 1)),
+  )                   
+
+
+tidy(fits_split)[, c(1, 2, 3, 4, 6)] %>%
+  kable(
+    format = "html",
+    table.attr = "style='width:75%;' ",
+    caption = "Model Estimation Results",
+    digits = 3
+  ) %>%
+  kable_classic_2(full_width = F)
+
+#Forecast Estimation and Results
+
+accuracy(fcs, test)[, c(1, 2, 6, 7)] %>%
+  kable(
+    format = "html",
+    table.attr = "style='width:50%;' ",
+    caption = "Model Forecast Results",
+    col.names = c("model", "type", "MPE", "MAPE"),
+    digits = 3,
+  ) %>%
+  kable_classic_2(full_width = F)
+
+
 ```
 
 ### Selvitä lagin määrä, librarynä forecast aikasarjalla, miten performoi, selittävillä muuttujilla,

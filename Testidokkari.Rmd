@@ -1,0 +1,759 @@
+---
+title: "Testidokumentti"
+author: "Pekka Haimi"
+date: "2023-01-12"
+output: 
+  html_document:
+    css: "style.css"
+    toc: true
+    toc_float: true
+    code_folding: hide
+  keep md: yes
+---
+Tämä on Pekka Haimin Gradun analyysiosio
+
+Analyysin tavoitteet:
+
++ Tuoda syntyvyysdata R:ään
+
++ Ladata google trends data valituille hakutermeille
+
++ Luoda peruskuvaajat syntyvyysdatasta ja google hakutermeistä
+
++ Valita sopiva  malli syntyvyysdatalle käyttäen ARIMA aikasarjamallia, joka ottaa huomioon myös kausivaihtelun, eli ARIMA (p,d,q) X (P,D,Q).
+
++ Luoda naiivi ennustemalli käyttäen pelkkää syntyvyysdataa
+
++ Lisätä malliin eri hakutermien hakuindeksidata ja katsoa paraneeko malli
+
++ Valita paras malli, joka on myös yksinkertainen 
+
+
+### Alkuvalmistelut
+
+
+#### Ladataan tarvittavat R-kirjastot
+```{r, echo=TRUE, message=FALSE}
+library(trendecon)
+library(fpp3)
+library(rmarkdown)
+library(plotly)
+library(gtrendsR)
+library(tidyverse)
+library(vars)
+library(ggplot2)
+library(ggstatsplot)
+library(kableExtra)
+library(vtable)
+
+```
+
+
+#### Tuodaan tilastokeskukselta saatu aineisto R:ään
+Aineisto sisältää kuukausitasolla seuraavat tiedot aikaväliltä Tammikuu 2004 - Heinäkuu 2022
+
++ Elävänä syntyneet lapset Suomessa
++ Äidille elävänä syntyneet esikoislapset
+
+```{r,echo=TRUE, message=FALSE}
+dataset <- readr::read_csv("birthsandpopulationY04Y22.csv")
+dataset <- dataset %>% dplyr::filter(timestamp >= "2009-01-01")
+```
+
+#### Google hakutrendidatan lataaminen 
+Google tarjoaa hakutermidataa vuodesta 2004 eteenpäin, mutta Suomen osalta aineisto on epäluotettavaa noin vuoteen 2010 saakka, kuten huomaamme alla olevasta kuvaajasta.
+```{r,echo=TRUE, message=FALSE, cache=TRUE,class.source = 'fold-hide'}
+kw_esimerkki <- ts_gtrends("raskaus oireet",time="2004-01-01 2022-12-01", geo='FI',retry=5,wait=10)
+kw_esimerkki %>%  ggplot(aes(x=time,y=value)) + geom_line() + geom_point() + scale_color_grey() + theme_classic() + labs(x="Aika",y="Sanan Raskaustesti hakuintensiteetti")
+```
+
+Täten rajataan hakutermiaineiston lataus aikavälille Tammikuu 2009 - Joulukuu 2022. Näin hakuindeksi skaalatauu kyseiselle aikavälille 
+Samalla yhdistetään kerätty hakutermiainesto syntyvyysaineistoon jolloin saadaan yksi aikasarja-aineisto (tsibble). Lisäksi luodaan viive-muuttujat hakutermeille aikaväleillä 3 kuukautta - 12 kuukautta.
+Viive muuttujien avulla yhdistetään syntyvyysaineisto t-x ajan päähän. Esimerkiksi mikä oli tietyn hakutermin yleisyys 9 kuukautta aikaisemmin kuin havaittu syntyneiden lasten lukumäärä. 
+
+```{r,echo=TRUE, message=FALSE,cache=TRUE, class.source = 'fold-hide'}
+
+kw_alkuraskaus_raw <- ts_gtrends("alkuraskaus",time="2009-01-01 2022-12-31",geo='FI',retry=5,wait=10)
+kw_alkuraskaus_raw <- rename(kw_alkuraskaus_raw, alkuraskaus = value)
+
+kw_raskaustesti_raw <- ts_gtrends("raskaustesti",time="2009-01-01 2022-12-31",geo='FI',retry=5,wait=10)
+kw_raskaustesti_raw <- rename(kw_raskaustesti_raw, raskaustesti = value)
+
+kw_raskausoireet_raw <- ts_gtrends("raskausoireet",time="2009-01-01 2022-12-31",geo='FI',retry=5,wait=10)
+kw_raskausoireet_raw <- rename(kw_raskausoireet_raw, raskausoireet = value)
+
+kw_raskaus_oireet_raw <- ts_gtrends("raskaus oireet",time="2009-01-01 2022-12-31",geo='FI',retry=5,wait=10)
+kw_raskaus_oireet_raw <- rename(kw_raskaus_oireet_raw,raskaus_oireet = value)
+
+keywords <- kw_raskaustesti_raw %>% left_join(kw_raskausoireet_raw, by = c("time"="time"))
+keywords <- keywords %>% left_join(kw_raskaus_oireet_raw, by = c("time"="time"))
+keywords <- keywords %>% left_join(kw_alkuraskaus_raw, by = c("time"="time"))
+
+dataset <- dataset %>% full_join(keywords,by = c("timestamp"="time"),keep=TRUE)
+
+dataset <- dataset %>% mutate (Month = yearmonth(time))
+
+
+dataset <- dataset  %>% 
+          dplyr::select(Month,first,total,alkuraskaus,raskaustesti,raskausoireet,raskaus_oireet,timestamp) %>% 
+          as_tsibble(index = Month)
+
+## adding lags
+dataset <- dataset %>% mutate(alkuraskaus_L12 = lag(alkuraskaus, n=12,))
+dataset <- dataset %>% mutate(alkuraskaus_L11 = lag(alkuraskaus, n=11,))
+dataset <- dataset %>% mutate(alkuraskaus_L10 = lag(alkuraskaus, n=10,))
+dataset <- dataset %>% mutate(alkuraskaus_L9 = lag(alkuraskaus, n=9,))
+dataset <- dataset %>% mutate(alkuraskaus_L8 = lag(alkuraskaus, n=8,))
+dataset <- dataset %>% mutate(alkuraskaus_L7 = lag(alkuraskaus, n=7,))
+dataset <- dataset %>% mutate(alkuraskaus_L6 = lag(alkuraskaus, n=6,))
+dataset <- dataset %>% mutate(alkuraskaus_L5 = lag(alkuraskaus, n=5,))
+dataset <- dataset %>% mutate(alkuraskaus_L4 = lag(alkuraskaus, n=4,))
+dataset <- dataset %>% mutate(alkuraskaus_L3 = lag(alkuraskaus, n=3,))
+
+dataset <- dataset %>% mutate(raskaustesti_L12 = lag(raskaustesti, n=12,))
+dataset <- dataset %>% mutate(raskaustesti_L11 = lag(raskaustesti, n=11,))
+dataset <- dataset %>% mutate(raskaustesti_L10 = lag(raskaustesti, n=10,))
+dataset <- dataset %>% mutate(raskaustesti_L9 = lag(raskaustesti, n=9,))
+dataset <- dataset %>% mutate(raskaustesti_L8 = lag(raskaustesti, n=8,))
+dataset <- dataset %>% mutate(raskaustesti_L7 = lag(raskaustesti, n=7,))
+dataset <- dataset %>% mutate(raskaustesti_L6 = lag(raskaustesti, n=6,))
+dataset <- dataset %>% mutate(raskaustesti_L5 = lag(raskaustesti, n=5,))
+dataset <- dataset %>% mutate(raskaustesti_L4 = lag(raskaustesti, n=4,))
+dataset <- dataset %>% mutate(raskaustesti_L3 = lag(raskaustesti, n=3,))
+
+dataset <- dataset %>% mutate(raskausoireet_L12 = lag(raskausoireet, n=12,))
+dataset <- dataset %>% mutate(raskausoireet_L11 = lag(raskausoireet, n=11,))
+dataset <- dataset %>% mutate(raskausoireet_L10 = lag(raskausoireet, n=10,))
+dataset <- dataset %>% mutate(raskausoireet_L9 = lag(raskausoireet, n=9,))
+dataset <- dataset %>% mutate(raskausoireet_L8 = lag(raskausoireet, n=8,))
+dataset <- dataset %>% mutate(raskausoireet_L7 = lag(raskausoireet, n=7,))
+dataset <- dataset %>% mutate(raskausoireet_L6 = lag(raskausoireet, n=6,))
+dataset <- dataset %>% mutate(raskausoireet_L5 = lag(raskausoireet, n=5,))
+dataset <- dataset %>% mutate(raskausoireet_L4 = lag(raskausoireet, n=4,))
+dataset <- dataset %>% mutate(raskausoireet_L3 = lag(raskausoireet, n=3,))
+
+dataset <- dataset %>% mutate(raskaus_oireet_L12 = lag(raskaus_oireet, n=12,))
+dataset <- dataset %>% mutate(raskaus_oireet_L11 = lag(raskaus_oireet, n=11,))
+dataset <- dataset %>% mutate(raskaus_oireet_L10 = lag(raskaus_oireet, n=10,))
+dataset <- dataset %>% mutate(raskaus_oireet_L9 = lag(raskaus_oireet, n=9,))
+dataset <- dataset %>% mutate(raskaus_oireet_L8 = lag(raskaus_oireet, n=8,))
+dataset <- dataset %>% mutate(raskaus_oireet_L7 = lag(raskaus_oireet, n=7,))
+dataset <- dataset %>% mutate(raskaus_oireet_L6 = lag(raskaus_oireet, n=6,))
+dataset <- dataset %>% mutate(raskaus_oireet_L5 = lag(raskaus_oireet, n=5,))
+dataset <- dataset %>% mutate(raskaus_oireet_L4 = lag(raskaus_oireet, n=4,))
+dataset <- dataset %>% mutate(raskaus_oireet_L3 = lag(raskaus_oireet, n=3,))
+
+
+```
+
+Nyt meillä on aineisto jossa meillä on syntyvyysluvut aikavälillä  Tammikuu 2004 - Heinäkuu 2022 ja hakutermiaineisto Tammikuu 2009 - Joulukuu 2022
+
+Koska aineisto on epäluotettavaa noin ennen vuotta 2010 niin rajataan aineisto Tammikuu 2010 eteenpäin
+
+```{r,echo=TRUE, message=FALSE}
+##Filtering data for 2010 onwards
+dataset<- dataset %>% 
+          dplyr::filter(timestamp >= "2010-01-01")
+
+```
+
+Peruskuvaaja aineistosta:
+```{r,echo=TRUE, message=FALSE}
+dataset %>% dplyr::select(Month,first,total,alkuraskaus,raskaustesti,raskausoireet,raskaus_oireet) %>% 
+  sumtable(out = "return",
+           vars = c("Month","first","total","raskaustesti","alkuraskaus","raskausoireet","raskaus_oireet"),
+           summ=c("notNA(x)","mean(x)","sd(x)","min(x)","max(x)"),
+           summ.names=c("N","Keskiarvo","Keskihajonta","Min","Max")) %>% 
+             kable(digits = 2, caption = "Summary") %>%
+  kable_styling() %>% kable_classic()
+
+```
+
+## Analyysi
+### Syntyvyys- ja hakutermiaineistosta kuvaajat
+```{r,echo=TRUE, message=FALSE}
+dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-07-01"))) %>% autoplot(vars(first,total))
+
+
+first_plot <- dataset %>% ggplot(aes(x=Month,y=first)) + geom_line() + scale_color_grey() + ggtitle("Syntyneet esikoiset Suomessa") + theme_classic() + labs(x="Aika",y="Esikoiset")
+
+dataset %>%    ggplot(aes(x = Month)) +
+  geom_line(aes(y = raskaustesti, color = "Raskaustesti")) +
+  geom_line(aes(y = raskausoireet, color = "Raskausoireet")) +
+  geom_line(aes(y = raskaus_oireet, color = "Raskaus Oireet")) +
+  geom_line(aes(y = alkuraskaus, color = "Alkuraskaus")) +
+  labs(
+    title = "Google Trends Hakuindeksit",
+    caption = "Lähde: Google Trends",
+    y = "Hakunsentiteetti",
+    x = "Aika"
+  )  +
+  theme(legend.position = "top", legend.title = element_blank())
+
+```
+Hakutermien indeksidata piirrettynä samaan kuvaajaan. 
+
+
+#### Aineiston dekomponointi
+Analysoidaan muuttujia dekomponoimalla jokainen muuttuja aikasarjassa. Lisäksi tutkitaan aineistossa esiintyvää kausivaihtelua piirtämällä kausivaihtelua kuvaavat kuvaajat jokaisesta muuttujasta 
+```{r,echo=TRUE, message=FALSE}
+## Kausivaihtelukuvaajat
+dataset %>%  dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-07-01"))) %>% model(stl=STL(total)) %>% components() %>% autoplot()
+dataset %>%  dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-07-01"))) %>% model(stl=STL(first)) %>% components() %>% autoplot()
+
+dataset %>%  dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-12-01"))) %>% model(stl=STL(alkuraskaus)) %>% components() %>% autoplot()
+dataset %>%  dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-12-01"))) %>% model(stl=STL(raskaustesti)) %>% components() %>% autoplot()
+dataset %>%  dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-12-01"))) %>% model(stl=STL(raskausoireet)) %>% components() %>% autoplot()
+dataset %>%  dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-12-01"))) %>% model(stl=STL(raskaus_oireet)) %>% components() %>% autoplot()
+
+##Muutujakohtaiset kausivaihtelukuvaajat
+dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-07-01"))) %>% gg_season(total, labels = "both")
+dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-07-01"))) %>% gg_season(first, labels = "both")
+
+dataset %>%  dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-07-01"))) %>% gg_subseries(total)
+dataset %>%  dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-07-01"))) %>% gg_subseries(first)
+
+dataset %>%  dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-12-31"))) %>% gg_subseries(alkuraskaus)
+dataset %>%  dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-12-31"))) %>% gg_subseries(raskaustesti)
+dataset %>%  dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-12-31"))) %>% gg_subseries(raskausoireet)
+dataset %>%  dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-12-31"))) %>% gg_subseries(raskaus_oireet)
+
+```
+
+Kuvaajista nähdään seuraavaa
+
+* Syntyvyysmuuttujat (total=kaikki syntyneet, first=äideille syntyneet esikoiset), näyttävät vuosien 2010 ja 2019 välillä laskevaa trendiä, joka kääntyy kasvuun vuoden 2020 jälkipuoliskolla.
+* Molemmissa syntyvyysmuuttujissa on havaittavissa voimakasta kausivaihtelua.
+* Hakutermien osalta trendin suunta vaihtelee.
+* Hakutermeissä ei havaita yhtä voimakasta kausivaihtelua kuin syntyvyysmyyttujissa.
+
+ 
+### Aikasarjat päällekkäin
+Piirretään aineistot päällekkäin jotta voidaan arvioida syntyvyysaineiston ja hakutermien välistä yhteyttä
+```{r,echo=TRUE, message=FALSE}
+### Päällekkäiset kuvaajat
+
+dataset %>% plot_ly(., x = ~timestamp) %>% 
+  add_trace(y = ~total, name = 'kaikki syntyneet',mode = 'lines') %>% 
+  add_trace(y = ~alkuraskaus, name = 'alkuraskaus',mode = 'lines', yaxis="y2") %>% 
+    add_trace(y = ~alkuraskaus_L9, name = 'alkuraskaus L9',mode = 'lines', yaxis="y2") %>%
+    add_trace(y = ~alkuraskaus_L8, name = 'alkuraskaus L8',mode = 'lines', yaxis="y2") %>%
+    add_trace(y = ~alkuraskaus_L7, name = 'alkuraskaus L7',mode = 'lines', yaxis="y2") %>%
+    add_trace(y = ~alkuraskaus_L6, name = 'alkuraskaus L6',mode = 'lines', yaxis="y2") %>%
+    add_trace(y = ~alkuraskaus_L5, name = 'alkuraskaus L5',mode = 'lines', yaxis="y2") %>%
+  add_trace(y = ~alkuraskaus_L4, name = 'alkuraskaus L4',mode = 'lines', yaxis="y2") %>%
+  add_trace(y = ~alkuraskaus_L3, name = 'alkuraskaus L3',mode = 'lines', yaxis="y2") %>%
+layout(yaxis2=list(overlaying="y", side="right"))
+
+
+dataset %>% plot_ly(., x = ~timestamp) %>% 
+  add_trace(y = ~total, name = 'kaikki syntyneet',mode = 'lines') %>% 
+  add_trace(y = ~raskaustesti, name = 'raskaustesti',mode = 'lines', yaxis="y2") %>% 
+    add_trace(y = ~raskaustesti_L9, name = 'raskaustesti L9',mode = 'lines', yaxis="y2") %>%
+    add_trace(y = ~raskaustesti_L8, name = 'raskaustesti L8',mode = 'lines', yaxis="y2") %>%
+    add_trace(y = ~raskaustesti_L7, name = 'raskaustesti L7',mode = 'lines', yaxis="y2") %>%
+    add_trace(y = ~raskaustesti_L6, name = 'raskaustesti L6',mode = 'lines', yaxis="y2") %>%
+    add_trace(y = ~raskaustesti_L5, name = 'raskaustesti L5',mode = 'lines', yaxis="y2") %>%
+  add_trace(y = ~raskaustesti_L4, name = 'raskaustesti L4',mode = 'lines', yaxis="y2") %>%
+  add_trace(y = ~raskaustesti_L3, name = 'raskaustesti L3',mode = 'lines', yaxis="y2") %>%
+layout(yaxis2=list(overlaying="y", side="right"))
+
+dataset %>% plot_ly(., x = ~timestamp) %>% 
+  add_trace(y = ~total, name = 'kaikki syntyneet',mode = 'lines') %>% 
+  add_trace(y = ~raskausoireet, name = 'raskausoireet',mode = 'lines', yaxis="y2") %>% 
+    add_trace(y = ~raskausoireet_L9, name = 'raskausoireet L9',mode = 'lines', yaxis="y2") %>%
+    add_trace(y = ~raskausoireet_L8, name = 'raskausoireet L8',mode = 'lines', yaxis="y2") %>%
+    add_trace(y = ~raskausoireet_L7, name = 'raskausoireet L7',mode = 'lines', yaxis="y2") %>%
+    add_trace(y = ~raskausoireet_L6, name = 'raskausoireet L6',mode = 'lines', yaxis="y2") %>%
+    add_trace(y = ~raskausoireet_L5, name = 'raskausoireet L5',mode = 'lines', yaxis="y2") %>%
+  add_trace(y = ~raskausoireet_L4, name = 'raskausoireet L4',mode = 'lines', yaxis="y2") %>%
+  add_trace(y = ~raskausoireet_L3, name = 'raskausoireet L3',mode = 'lines', yaxis="y2") %>%
+layout(yaxis2=list(overlaying="y", side="right"))
+
+
+
+dataset %>% plot_ly(., x = ~timestamp) %>% 
+  add_trace(y = ~total, name = 'kaikki syntyneet',mode = 'lines') %>% 
+  add_trace(y = ~raskaus_oireet, name = 'raskaus_oireet',mode = 'lines', yaxis="y2") %>% 
+    add_trace(y = ~raskaus_oireet_L9, name = 'raskaus_oireet L9',mode = 'lines', yaxis="y2") %>%
+    add_trace(y = ~raskaus_oireet_L8, name = 'raskaus_oireet L8',mode = 'lines', yaxis="y2") %>%
+    add_trace(y = ~raskaus_oireet_L7, name = 'raskaus_oireet L7',mode = 'lines', yaxis="y2") %>%
+    add_trace(y = ~raskaus_oireet_L6, name = 'raskaus_oireet L6',mode = 'lines', yaxis="y2") %>%
+    add_trace(y = ~raskaus_oireet_L5, name = 'raskaus_oireet L5',mode = 'lines', yaxis="y2") %>%
+  add_trace(y = ~raskaus_oireet_L4, name = 'raskaus_oireet L4',mode = 'lines', yaxis="y2") %>%
+  add_trace(y = ~raskaus_oireet_L3, name = 'raskaus_oireet L3',mode = 'lines', yaxis="y2") %>%
+layout(yaxis2=list(overlaying="y", side="right"))
+
+
+
+### Osuvimmat viiveet aikasarjoittain 
+
+dataset %>% plot_ly(., x = ~timestamp) %>% 
+  add_trace(y = ~total, name = 'kaikki syntyneet',mode = 'lines') %>% 
+  add_trace(y = ~raskaustesti_L9 , name = 'Raskaustesti Lag 9',mode = 'lines', yaxis="y2") %>% 
+    add_trace(y = ~alkuraskaus_L8, name = 'Alkuraskaus Lag 8',mode = 'lines', yaxis="y2") %>%
+    add_trace(y = ~raskausoireet_L10, name = 'Raskausoireet Lag 10',mode = 'lines', yaxis="y2") %>%
+    add_trace(y = ~raskaus_oireet_L9, name = 'Raskaus Oireet Lag 9',mode = 'lines', yaxis="y2") %>%
+layout(yaxis2=list(overlaying="y", side="right"))
+
+
+dataset %>% plot_ly(., x = ~timestamp) %>% 
+  add_trace(y = ~first, name = 'Esikoisena syntyneet',mode = 'lines') %>% 
+  add_trace(y = ~raskaustesti_L8 , name = 'Raskaustesti Lag 8',mode = 'lines', yaxis="y2") %>% 
+    add_trace(y = ~alkuraskaus_L7, name = 'Alkuraskaus Lag 7',mode = 'lines', yaxis="y2") %>%
+    add_trace(y = ~raskausoireet_L10, name = 'Raskausoireet Lag 10',mode = 'lines', yaxis="y2") %>%
+    add_trace(y = ~raskaus_oireet_L7, name = 'Raskaus Oireet Lag 7',mode = 'lines', yaxis="y2") %>%
+layout(yaxis2=list(overlaying="y", side="right"))
+
+```
+Voit valita piirrettävät muuttujat interaktiivisesta kuvaajasta
+
+
+### Korrelaatio
+Tutkitaan eri viiveiden välistä korrelaatiota syntyvyysaineistoon
+
+```{r,echo=TRUE, message=FALSE}
+
+ggscatterstats(data = dataset, x = total, y = raskausoireet)
+ggscatterstats(data = dataset, x = total, y = raskausoireet_L3)
+ggscatterstats(data = dataset, x = total, y = raskausoireet_L4)
+ggscatterstats(data = dataset, x = total, y = raskausoireet_L5)
+ggscatterstats(data = dataset, x = total, y = raskausoireet_L6)
+ggscatterstats(data = dataset, x = total, y = raskausoireet_L7)
+ggscatterstats(data = dataset, x = total, y = raskausoireet_L8)
+ggscatterstats(data = dataset, x = total, y = raskausoireet_L9)
+ggscatterstats(data = dataset, x = total, y = raskausoireet_L10)
+ggscatterstats(data = dataset, x = total, y = raskausoireet_L11)
+ggscatterstats(data = dataset, x = total, y = raskausoireet_L12)
+
+
+ggscatterstats(data = dataset, x = total, y = raskaus_oireet)
+ggscatterstats(data = dataset, x = total, y = raskaus_oireet_L3)
+ggscatterstats(data = dataset, x = total, y = raskaus_oireet_L4)
+ggscatterstats(data = dataset, x = total, y = raskaus_oireet_L5)
+ggscatterstats(data = dataset, x = total, y = raskaus_oireet_L6)
+ggscatterstats(data = dataset, x = total, y = raskaus_oireet_L7)
+ggscatterstats(data = dataset, x = total, y = raskaus_oireet_L8)
+ggscatterstats(data = dataset, x = total, y = raskaus_oireet_L9)
+ggscatterstats(data = dataset, x = total, y = raskaus_oireet_L10)
+ggscatterstats(data = dataset, x = total, y = raskaus_oireet_L11)
+ggscatterstats(data = dataset, x = total, y = raskaus_oireet_L12)
+
+ggscatterstats(data = dataset, x = total, y = raskaustesti)
+ggscatterstats(data = dataset, x = total, y = raskaustesti_L3)
+ggscatterstats(data = dataset, x = total, y = raskaustesti_L4)
+ggscatterstats(data = dataset, x = total, y = raskaustesti_L5)
+ggscatterstats(data = dataset, x = total, y = raskaustesti_L6)
+ggscatterstats(data = dataset, x = total, y = raskaustesti_L7)
+ggscatterstats(data = dataset, x = total, y = raskaustesti_L8)
+ggscatterstats(data = dataset, x = total, y = raskaustesti_L9)
+ggscatterstats(data = dataset, x = total, y = raskaustesti_L10)
+ggscatterstats(data = dataset, x = total, y = raskaustesti_L11)
+ggscatterstats(data = dataset, x = total, y = raskaustesti_L12)
+
+
+ggscatterstats(data = dataset, x = total, y = alkuraskaus)
+ggscatterstats(data = dataset, x = total, y = alkuraskaus_L3)
+ggscatterstats(data = dataset, x = total, y = alkuraskaus_L4)
+ggscatterstats(data = dataset, x = total, y = alkuraskaus_L5)
+ggscatterstats(data = dataset, x = total, y = alkuraskaus_L6)
+ggscatterstats(data = dataset, x = total, y = alkuraskaus_L7)
+ggscatterstats(data = dataset, x = total, y = alkuraskaus_L8)
+ggscatterstats(data = dataset, x = total, y = alkuraskaus_L9)
+ggscatterstats(data = dataset, x = total, y = alkuraskaus_L10)
+ggscatterstats(data = dataset, x = total, y = alkuraskaus_L11)
+ggscatterstats(data = dataset, x = total, y = alkuraskaus_L12)
+```
+Hakutermien korrelaatio kaikkien syntyneiden aineiston kanssa vaihtelee termin ja viiveen mukaan. Voimakkaimmin näyttäisi korreloivan hakutermi raskausoireet ja viive 6 ja 7 kuukautta. Heikoin korrelaatio näyttäisi olevan hakutermillä raskaustesti ja termillä alkuraskaus näyttäisi olevan negatiivinen korrelaatio. Pidetään kuitenkin kaikki termit mukana jatkoanalyysissä.
+
+
+### ARIMA mallin luonti
+
+#### Piiretään kuvaaja ilman differointia ja yksi kuvaaja kausivaihtelun huomioon ottavalla differoinnilla
+```{r Arima model,echo=TRUE, message=FALSE}
+#No differencing 
+
+dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-07-01"))) %>% 
+        gg_tsdisplay(log(total),
+         plot_type='partial',lag=36) + 
+        labs(title="not differenced",y="")
+
+#Seasonal ARIMA of logged total
+dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-07-01"))) %>% 
+        gg_tsdisplay(difference(log(total),12),
+         plot_type='partial',lag=36) + 
+        labs(title="seasonally differenced",y="")
+                     
+```
+### Parametrien valitseminen ARIMA malliin, kaikkien syntyneiden aineistolle
+
+R:työkalulla ja fable-kirjastolla voisi valita automaattisesti termit ARIMA-malliin mutta automaattisissa malleissa on riskinsä joten analysoidaan yllä olevat kuvaajat ja valitaan muutama vaihtoehto manuaalisesti ja vertaillaan niiden osuvuutta automaattiseen malliin. ACF ja PACF kuvaajien perusteella p-parametri on olisi 1, ja q saattaa olla 1,2 tai 3. Kausivaihteluun liittyvä P-parametri on todennäköisesti 2 ja koska teimme yhden differoinnin kausivaihtelun mukaan, D on 1. Parametri Q saattaa olla 0,1 tai 2. 
+
+
+
+```{r arima-mallin testaus,echo=TRUE, message=FALSE}
+fit <- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-07-01"))) %>% 
+      model( 
+       ARIMA101210=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,0)),
+       ARIMA102210=ARIMA(log(total) ~ 0 + pdq(1,0,2) + PDQ(2,1,0)),
+       ARIMA103210=ARIMA(log(total) ~ 0 + pdq(1,0,3) + PDQ(2,1,0)),
+       ARIMA101211=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1)),
+       ARIMA102211=ARIMA(log(total) ~ 0 + pdq(1,0,2) + PDQ(2,1,1)),
+       ARIMA103211=ARIMA(log(total) ~ 0 + pdq(1,0,3) + PDQ(2,1,1)),
+       ARIMA101212=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,2)),
+       ARIMA102212=ARIMA(log(total) ~ 0 + pdq(1,0,2) + PDQ(2,1,2)),
+       ARIMA103212=ARIMA(log(total) ~ 0 + pdq(1,0,3) + PDQ(2,1,2)),
+      auto= ARIMA(log(total),stepwise=FALSE,approx=FALSE)                  
+      )
+fit %>% pivot_longer(everything(), names_to = "Model name",
+                     values_to = "Orders")
+
+glance(fit) %>% arrange(AICc) 
+
+#Testing the model with training set from 2010 to 2020 and compare it to forecast for 2020-2022
+fit_training <- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2020-07-01"))) %>% 
+      model( 
+       ARIMA101210=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,0)),
+       ARIMA102210=ARIMA(log(total) ~ 0 + pdq(1,0,2) + PDQ(2,1,0)),
+       ARIMA103210=ARIMA(log(total) ~ 0 + pdq(1,0,3) + PDQ(2,1,0)),
+       ARIMA101211=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1)),
+       ARIMA102211=ARIMA(log(total) ~ 0 + pdq(1,0,2) + PDQ(2,1,1)),
+       ARIMA103211=ARIMA(log(total) ~ 0 + pdq(1,0,3) + PDQ(2,1,1)),
+       ARIMA101212=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,2)),
+       ARIMA102212=ARIMA(log(total) ~ 0 + pdq(1,0,2) + PDQ(2,1,2)),
+       ARIMA103212=ARIMA(log(total) ~ 0 + pdq(1,0,3) + PDQ(2,1,2)),
+      auto= ARIMA(log(total),stepwise=FALSE,approx=FALSE)                  
+      )
+testing_dataset <- dataset %>% dplyr::filter(between(timestamp,as.Date("2020-08-01"),as.Date("2022-07-01"))) 
+fit_training %>% forecast(h=24) %>% accuracy(testing_dataset) %>%  dplyr::select(.model, RMSE:MAPE)
+
+###Lowest AICc and second best MAPE is ARIMA 101 211
+
+
+fit_ARIMA <- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-07-01"))) %>% 
+      model(ARIMA101211=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1)))
+
+fit_ARIMA %>% forecast(h=36) %>%
+  filter(.model=='ARIMA101211') %>%
+  autoplot(dataset)
+
+fit_ARIMA_training <- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2020-07-01"))) %>% 
+      model(ARIMA101211=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1)))
+
+fit_ARIMA_training %>% forecast(h=36) %>%
+  filter(.model=='ARIMA101211') %>%
+  autoplot(dataset)
+
+fit_ARIMA_training %>% forecast(testing_dataset) %>% accuracy(dataset) %>%  dplyr::select(.model, RMSE:MAPE)
+
+
+```
+Eri malleja analysoitaessa pienimmän korjatun Akaiken Informaatio kriteerin (AICc) mukaisen tuloksen antaa ARIMA malli 101 211. Eli Parhaaksi naiivi malliksi valikoitu ARIMA malli termeillä p=1, d=0, q=1 ja P=2, D=1 ja Q=1. 
+
+
+
+### Etsitään parhaat viiveet hakutermi-muuttujille
+```{r viive,echo=TRUE, message=FALSE}
+
+#Testing different lags 
+   fit_t_raskaustesti <- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-07-01"))) %>% 
+      model( 
+       L0=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti)),
+       L3=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L3)),
+        L4=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L4)),
+        L5=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L5)),
+        L6=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L6)),
+        L7=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L7)),
+        L8=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L8)),
+        L9=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L9)),
+        L10=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L10)),
+        L11=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L11)),
+        L12=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L12))
+      )
+glance(fit_t_raskaustesti) %>% arrange(AICc) 
+
+
+
+
+#Keyword alkuraskaus
+   fit_t_alkuraskaus <- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-07-01"))) %>% 
+      model( 
+       L0=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus)),
+       L3=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L3)),
+        L4=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L4)),
+        L5=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L5)),
+        L6=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L6)),
+        L7=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L7)),
+        L8=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L8)),
+        L9=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L9)),
+        L10=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L10)),
+        L11=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L11)),
+        L12=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L12))
+      )
+glance(fit_t_alkuraskaus) %>% arrange(AICc) 
+
+
+#Keyword raskausoireet
+
+   fit_t_raskausoireet <- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-07-01"))) %>% 
+      model( 
+       L0=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskausoireet)),
+       L3=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskausoireet_L3)),
+        L4=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskausoireet_L4)),
+        L5=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskausoireet_L5)),
+        L6=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskausoireet_L6)),
+        L7=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskausoireet_L7)),
+        L8=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskausoireet_L8)),
+        L9=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskausoireet_L9)),
+        L10=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskausoireet_L10)),
+        L11=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskausoireet_L11)),
+        L12=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskausoireet_L12))
+      )
+glance(fit_t_raskausoireet) %>% arrange(AICc) 
+#Parhaat on L10, L11 ja L9
+
+
+#Keyword raskaus oireet
+   fit_t_raskaus_oireet <- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-07-01"))) %>% 
+      model( 
+       L0=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet)),
+       L3=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L3)),
+        L4=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L4)),
+        L5=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L5)),
+        L6=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L6)),
+        L7=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L7)),
+        L8=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L8)),
+        L9=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L9)),
+        L10=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L10)),
+        L11=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L11)),
+        L12=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L12))
+      )
+glance(fit_t_raskaus_oireet) %>% arrange(AICc) 
+
+
+```
+
+Parhaiksi viiveiksi valikoituivat seuraavat eri hakutermien osalta
+Raskaustesti, viive 9 kuukautta
+Alkuraskaus, viive 8 kuukautta
+Raskausoireet, viive 10 kuukautta
+Raskaus Oireet, viive 9 kuukautta.
+
+
+### Vertaillaan eri termejä ja niiden yhdistelmää naiviin malliin aikavälillä 2010-Heinäkuu 2022
+
+```{r mallivertailu,echo=TRUE, message=FALSE}
+
+#Testataan kaikkia sanoja ja verrataan naiviin malliin
+
+fit_predictors <- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-07-01"))) %>% 
+      model(Naive=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1)),
+            raskaustestiL9=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L9)),
+            alkuraskausL8=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L8)),
+            raskausoireetL10=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskausoireet_L10)),
+            raskaus_oireetL9=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L9)),
+            all_terms=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L9) +  log(alkuraskaus_L8) + log(raskausoireet_L10) + log(raskaus_oireet_L9))
+          )
+
+
+glance(fit_predictors) %>% arrange(AICc)
+fit_predictors %>% coef()
+fit_predictors %>% tidy()
+```
+
+### Luodaan ennustemalli ja testataan sitä
+Luodaan malli harjoitusaineistolla aikavälillä 2010 - 2020 Heinäkuu, luodaan ennustemalli aikavälille 2020 Elokuu - Heinäkuu 2022 ja analysoidaan mikä malli on osuvin
+```{r ennustemalli,echo=TRUE, message=FALSE}
+
+##Testing the models from 2016 onwards
+fit_predictors_training <- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2020-07-01"))) %>% 
+      model(Naive=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1)),
+            raskaustestiL9=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L9)),
+            alkuraskausL8=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L8)),
+            raskausoireetL10=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskausoireet_L10)),
+            raskaus_oireetL9=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L9)),
+            all_terms=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L9) +  log(alkuraskaus_L8) + log(raskausoireet_L10) + log(raskaus_oireet_L9))
+          )
+
+fit_predictors_training_alternative <- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2020-07-01"))) %>% 
+      model(Naive=ARIMA(log(total) ~ 0 + pdq(1,0,3) + PDQ(2,1,2)),
+            raskaustestiL9=ARIMA(log(total) ~ 0 + pdq(1,0,3) + PDQ(2,1,2) + log(raskaustesti_L9)),
+            alkuraskausL8=ARIMA(log(total) ~ 0 + pdq(1,0,3) + PDQ(2,1,2) + log(alkuraskaus_L8)),
+            raskausoireetL10=ARIMA(log(total) ~ 0 + pdq(1,0,3) + PDQ(2,1,2) + log(raskausoireet_L10)),
+            raskaus_oireetL9=ARIMA(log(total) ~ 0 + pdq(1,0,3) + PDQ(2,1,2) + log(raskaus_oireet_L9)),
+            all_terms=ARIMA(log(total) ~ 0 + pdq(1,0,3) + PDQ(2,1,2) + log(raskaustesti_L9) +  log(alkuraskaus_L8) + log(raskausoireet_L10) + log(raskaus_oireet_L9))
+          )
+
+  
+fit_predictors_training %>% forecast(testing_dataset) %>% accuracy(dataset) %>%  dplyr::select(.model, RMSE:MAPE)
+
+fit_predictors_training %>% forecast(testing_dataset) %>% autoplot(dataset,level=NULL)
+
+##fit_predictors_training_alternative %>% forecast(testing_dataset) %>% accuracy(dataset) %>%  dplyr::select(.model, RMSE:MAPE)
+
+##fit_predictors_training_alternative %>% forecast(testing_dataset) %>% autoplot(dataset,level=NULL)
+
+
+```
+Mean Average Error ja Mean Percentage Errorin, eli keskivirheen ja prosentuaalisen keskivirheen perusteella paras malli olisi se missä on kaikki hakutermit mukana. Kaikki hakutermit parantavat  Tulosten perusteella paras malli olisi malli joka yhdistää kaikki hakutermit. Kaikki mallit näyttäisi olevan parempia kuin pelkkä naivi malli. 
+
+
+
+
+
+
+
+### Sama analyysi esikoisaineistolle
+```{r Esikoisdatan sovittaminen,echo=TRUE, message=FALSE}
+#Tehdään sama analyysi esikoisdatalle
+
+dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-07-01"))) %>% 
+        gg_tsdisplay(log(first),
+         plot_type='partial',lag=36) + 
+        labs(title="not differenced",y="")
+
+#Seasonal ARIMA of logged total
+dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-07-01"))) %>% 
+        gg_tsdisplay(difference(log(first),12),
+         plot_type='partial',lag=36) + 
+        labs(title="seasonally differenced",y="")
+
+### Testing different ARIMA models with whole dataset 
+
+fit_first <- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-07-01"))) %>% 
+      model( 
+       ARIMA101210=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,0)),
+       ARIMA102210=ARIMA(log(first) ~ 0 + pdq(1,0,2) + PDQ(2,1,0)),
+       ARIMA103210=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0)),
+       ARIMA101211=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1)),
+       ARIMA102211=ARIMA(log(first) ~ 0 + pdq(1,0,2) + PDQ(2,1,1)),
+       ARIMA103211=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,1)),
+       ARIMA101212=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,2)),
+       ARIMA102212=ARIMA(log(first) ~ 0 + pdq(1,0,2) + PDQ(2,1,2)),
+       ARIMA103212=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,2)),
+      auto= ARIMA(log(first),stepwise=FALSE,approx=FALSE)                  
+      )
+fit_first %>% pivot_longer(everything(), names_to = "Model name",
+                     values_to = "Orders")
+
+glance(fit_first) %>% arrange(AICc) 
+
+#Testing the model with training set from 2010 to 2020 and measure accuracy for forecast of 2020-2022
+fit_training_first <- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2020-07-01"))) %>% 
+      model( 
+       ARIMA101210=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,0)),
+       ARIMA102210=ARIMA(log(first) ~ 0 + pdq(1,0,2) + PDQ(2,1,0)),
+       ARIMA103210=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0)),
+       ARIMA101211=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1)),
+       ARIMA102211=ARIMA(log(first) ~ 0 + pdq(1,0,2) + PDQ(2,1,1)),
+       ARIMA103211=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,1)),
+       ARIMA101212=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,2)),
+       ARIMA102212=ARIMA(log(first) ~ 0 + pdq(1,0,2) + PDQ(2,1,2)),
+       ARIMA103212=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,2)),
+      auto= ARIMA(log(first),stepwise=FALSE,approx=FALSE)                  
+      )
+
+fit_training_first %>% forecast(h=24) %>% accuracy(testing_dataset) %>%  dplyr::select(.model, RMSE:MAPE)
+
+#Best model for forecasting purpose is 103210
+```
+
+Finding lags for predictors
+```{r Esikoisdatan lagit,echo=TRUE, message=FALSE}
+
+#Raskaustesti
+fit_t_raskaustesti_first <- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-07-01"))) %>% 
+      model( 
+       L0=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaustesti)),
+       L3=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaustesti_L3)),
+        L4=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaustesti_L4)),
+        L5=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaustesti_L5)),
+        L6=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaustesti_L6)),
+        L7=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaustesti_L7)),
+        L8=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaustesti_L8)),
+        L9=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaustesti_L9)),
+        L10=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaustesti_L10)),
+        L11=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaustesti_L11)),
+        L12=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaustesti_L12))
+      )
+glance(fit_t_raskaustesti_first) %>% arrange(AICc) 
+#Paras on L8
+
+#Alkuraskaus
+fit_t_alkuraskaus_first <- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-07-01"))) %>% 
+      model( 
+       L0=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(alkuraskaus)),
+       L3=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(alkuraskaus_L3)),
+        L4=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(alkuraskaus_L4)),
+        L5=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(alkuraskaus_L5)),
+        L6=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(alkuraskaus_L6)),
+        L7=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(alkuraskaus_L7)),
+        L8=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(alkuraskaus_L8)),
+        L9=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(alkuraskaus_L9)),
+        L10=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(alkuraskaus_L10)),
+        L11=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(alkuraskaus_L11)),
+        L12=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(alkuraskaus_L12))
+      )
+glance(fit_t_alkuraskaus_first) %>% arrange(AICc) 
+#Paras on L7 tai L8
+
+#Raskausoireet
+fit_t_raskausoireet_first <- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-07-01"))) %>% 
+      model( 
+       L0=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskausoireet)),
+       L3=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskausoireet_L3)),
+        L4=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskausoireet_L4)),
+        L5=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskausoireet_L5)),
+        L6=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskausoireet_L6)),
+        L7=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskausoireet_L7)),
+        L8=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskausoireet_L8)),
+        L9=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskausoireet_L9)),
+        L10=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskausoireet_L10)),
+        L11=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskausoireet_L11)),
+        L12=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskausoireet_L12))
+      )
+glance(fit_t_raskausoireet_first) %>% arrange(AICc) 
+#Paras on L10
+
+
+#Raskaus Oireet
+fit_t_raskaus_oireet_first <- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-07-01"))) %>% 
+      model( 
+       L0=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaus_oireet)),
+       L3=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaus_oireet_L3)),
+        L4=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaus_oireet_L4)),
+        L5=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaus_oireet_L5)),
+        L6=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaus_oireet_L6)),
+        L7=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaus_oireet_L7)),
+        L8=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaus_oireet_L8)),
+        L9=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaus_oireet_L9)),
+        L10=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaus_oireet_L10)),
+        L11=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaus_oireet_L11)),
+        L12=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaus_oireet_L12))
+      )
+glance(fit_t_raskaus_oireet_first) %>% arrange(AICc) 
+#Paras on L7
+
+```
+
+```{r Ennustemalli esikoisdatalle ,echo=TRUE, message=FALSE}
+fit_predictors_training_first <- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2020-07-01"))) %>% 
+      model(Naive=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0)),
+            raskaustestiL8=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaustesti_L8)),
+            alkuraskausL7=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(alkuraskaus_L7)),
+            raskausoireetL10=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskausoireet_L10)),
+            raskaus_oireetL7=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaus_oireet_L7)),
+            all_terms=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaustesti_L8) +  log(alkuraskaus_L7) + log(raskausoireet_L10) + log(raskaus_oireet_L7)),
+            best_terms=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaustesti_L8) +  log(alkuraskaus_L7) + log(raskaus_oireet_L7))
+          )
+
+
+  
+fit_predictors_training_first %>% forecast(testing_dataset) %>% accuracy(dataset) %>%  dplyr::select(.model, RMSE:MAPE)
+
+fit_predictors_training_first %>% forecast(testing_dataset) %>% autoplot(dataset,level=NULL)
+fit_predictors_training_first %>% forecast(testing_dataset) %>% autoplot(dataset,level=NULL)
+
+best_fit_first <- dataset %>% model(best_terms=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaustesti_L8) +  log(alkuraskaus_L7) + log(raskaus_oireet_L7)))
+report(best_fit_first)
+```
