@@ -409,6 +409,13 @@ fit %>% pivot_longer(everything(), names_to = "Model name",
                      values_to = "Orders")
 
 glance(fit) %>% arrange(AICc) 
+##Diagnostiikka
+fit %>% dplyr::select(ARIMA101211) %>% gg_tsresiduals(lag=36)
+
+##Ljung-Box test
+augment(fit) %>%
+  dplyr::filter(.model == "ARIMA101211") %>%
+  features(.innov, ljung_box, lag=24, dof=4)
 
 #Testing the model with training set from 2010 to 2020 and compare it to forecast for 2020-2022
 fit_training <- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2020-07-01"))) %>% 
@@ -426,6 +433,8 @@ fit_training <- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"
       )
 testing_dataset <- dataset %>% dplyr::filter(between(timestamp,as.Date("2020-08-01"),as.Date("2022-07-01"))) 
 fit_training %>% forecast(h=24) %>% accuracy(testing_dataset) %>%  dplyr::select(.model, RMSE:MAPE)
+
+
 
 ###Lowest AICc and second best MAPE is ARIMA 101 211
 
@@ -447,9 +456,14 @@ fit_ARIMA_training %>% forecast(h=36) %>%
 fit_ARIMA_training %>% forecast(testing_dataset) %>% accuracy(dataset) %>%  dplyr::select(.model, RMSE:MAPE)
 
 
+
 ```
 Eri malleja analysoitaessa pienimmän korjatun Akaiken Informaatio kriteerin (AICc) mukaisen tuloksen antaa ARIMA malli 101 211. Eli Parhaaksi naiivi malliksi valikoitu ARIMA malli termeillä p=1, d=0, q=1 ja P=2, D=1 ja Q=1. 
 
+Naiivi malli, malli 0
+ARIMA 101 211
+log(y) ~ log(y-t1) + log(yt12) + log(yt-24) + et-1 + et
+ε
 
 
 ### Etsitään parhaat viiveet hakutermi-muuttujille
@@ -534,10 +548,10 @@ glance(fit_t_raskaus_oireet) %>% arrange(AICc)
 ```
 
 Parhaiksi viiveiksi valikoituivat seuraavat eri hakutermien osalta
-Raskaustesti, viive 9 kuukautta
-Alkuraskaus, viive 8 kuukautta
+Raskaustesti, viive 8 kuukautta
+Alkuraskaus, viive 7 kuukautta
 Raskausoireet, viive 10 kuukautta
-Raskaus Oireet, viive 9 kuukautta.
+Raskaus Oireet, viive 7 kuukautta.
 
 
 ### Vertaillaan eri termejä ja niiden yhdistelmää naiviin malliin aikavälillä 2010-Heinäkuu 2022
@@ -548,11 +562,11 @@ Raskaus Oireet, viive 9 kuukautta.
 
 fit_predictors <- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-07-01"))) %>% 
       model(Naive=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1)),
-            raskaustestiL9=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L9)),
-            alkuraskausL8=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L8)),
+            raskaustestiL8=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L8)),
+            alkuraskausL7=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L7)),
             raskausoireetL10=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskausoireet_L10)),
-            raskaus_oireetL9=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L9)),
-            all_terms=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L9) +  log(alkuraskaus_L8) + log(raskausoireet_L10) + log(raskaus_oireet_L9))
+            raskaus_oireetL7=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L7)),
+            all_terms=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L8) +  log(alkuraskaus_L7) + log(raskausoireet_L10) + log(raskaus_oireet_L7))
           )
 
 
@@ -565,35 +579,96 @@ fit_predictors %>% tidy()
 Luodaan malli harjoitusaineistolla aikavälillä 2010 - 2020 Heinäkuu, luodaan ennustemalli aikavälille 2020 Elokuu - Heinäkuu 2022 ja analysoidaan mikä malli on osuvin
 ```{r ennustemalli,echo=TRUE, message=FALSE}
 
-##Testing the models from 2016 onwards
+##Testing the models from 2020 onwards
 fit_predictors_training <- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2020-07-01"))) %>% 
       model(Naive=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1)),
-            raskaustestiL9=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L9)),
-            alkuraskausL8=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L8)),
+            raskaustestiL8=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L8)),
+            alkuraskausL7=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L7)),
             raskausoireetL10=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskausoireet_L10)),
-            raskaus_oireetL9=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L9)),
-            all_terms=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L9) +  log(alkuraskaus_L8) + log(raskausoireet_L10) + log(raskaus_oireet_L9))
-          )
+            raskaus_oireetL7=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L7)),
+            all_terms=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L8) +  log(alkuraskaus_L7) + log(raskausoireet_L10) + log(raskaus_oireet_L7)),
+            best_terms=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) +  log(alkuraskaus_L7) + log(raskausoireet_L10) + log(raskaus_oireet_L7))) 
+          
 
-fit_predictors_training_alternative <- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2020-07-01"))) %>% 
-      model(Naive=ARIMA(log(total) ~ 0 + pdq(1,0,3) + PDQ(2,1,2)),
-            raskaustestiL9=ARIMA(log(total) ~ 0 + pdq(1,0,3) + PDQ(2,1,2) + log(raskaustesti_L9)),
-            alkuraskausL8=ARIMA(log(total) ~ 0 + pdq(1,0,3) + PDQ(2,1,2) + log(alkuraskaus_L8)),
-            raskausoireetL10=ARIMA(log(total) ~ 0 + pdq(1,0,3) + PDQ(2,1,2) + log(raskausoireet_L10)),
-            raskaus_oireetL9=ARIMA(log(total) ~ 0 + pdq(1,0,3) + PDQ(2,1,2) + log(raskaus_oireet_L9)),
-            all_terms=ARIMA(log(total) ~ 0 + pdq(1,0,3) + PDQ(2,1,2) + log(raskaustesti_L9) +  log(alkuraskaus_L8) + log(raskausoireet_L10) + log(raskaus_oireet_L9))
-          )
 
   
 fit_predictors_training %>% forecast(testing_dataset) %>% accuracy(dataset) %>%  dplyr::select(.model, RMSE:MAPE)
+total_forecast <- fit_predictors_training %>% forecast(testing_dataset) %>% accuracy(dataset)
 
 fit_predictors_training %>% forecast(testing_dataset) %>% autoplot(dataset,level=NULL)
-
-##fit_predictors_training_alternative %>% forecast(testing_dataset) %>% accuracy(dataset) %>%  dplyr::select(.model, RMSE:MAPE)
-
-##fit_predictors_training_alternative %>% forecast(testing_dataset) %>% autoplot(dataset,level=NULL)
+fit_predictors_training %>% forecast(testing_dataset) %>% accuracy(dataset) %>%  dplyr::select(.model, RMSE:MAPE)
 
 
+### Rolling window method
+TDSR1 <- dataset %>% dplyr::filter(between(timestamp,as.Date("2020-11-01"),as.Date("2021-05-01")))  
+TDSR2 <- dataset %>% dplyr::filter(between(timestamp,as.Date("2021-06-01"),as.Date("2021-12-01")))
+TDSR3 <- dataset %>% dplyr::filter(between(timestamp,as.Date("2022-01-01"),as.Date("2022-07-01"))) 
+
+
+fit_total_hist <- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2020-01-01"))) %>% 
+ model(Naive=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1)),
+            raskaustestiL8=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L8)),
+            alkuraskausL7=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L7)),
+            raskausoireetL10=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskausoireet_L10)),
+            raskaus_oireetL7=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L7)),
+            all_terms=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L8) +  log(alkuraskaus_L7) + log(raskausoireet_L10) + log(raskaus_oireet_L7)),
+       best_terms=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) +  log(alkuraskaus_L7) + log(raskausoireet_L10) + log(raskaus_oireet_L7)) 
+          )
+TDSR_hist <- dataset %>% dplyr::filter(between(timestamp,as.Date("2020-02-01"),as.Date("2020-07-01"))) 
+
+
+
+fit_total_R1<- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2020-10-01"))) %>% 
+ model(Naive=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1)),
+            raskaustestiL8=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L8)),
+            alkuraskausL7=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L7)),
+            raskausoireetL10=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskausoireet_L10)),
+            raskaus_oireetL7=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L7)),
+            all_terms=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L8) +  log(alkuraskaus_L7) + log(raskausoireet_L10) + log(raskaus_oireet_L7)),
+       best_terms=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) +  log(alkuraskaus_L7) + log(raskausoireet_L10) + log(raskaus_oireet_L7)) 
+          )
+
+  
+
+
+
+fit_total_R2<- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2021-05-01"))) %>% 
+ model(Naive=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1)),
+            raskaustestiL8=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L8)),
+            alkuraskausL7=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L7)),
+            raskausoireetL10=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskausoireet_L10)),
+            raskaus_oireetL7=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L7)),
+            all_terms=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L8) +  log(alkuraskaus_L7) + log(raskausoireet_L10) + log(raskaus_oireet_L7)),
+       best_terms=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) +  log(alkuraskaus_L7) + log(raskausoireet_L10) + log(raskaus_oireet_L7)) 
+          )
+
+ 
+
+
+
+fit_total_R3<- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2021-12-01"))) %>% 
+ model(Naive=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1)),
+            raskaustestiL8=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L8)),
+            alkuraskausL7=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L7)),
+            raskausoireetL10=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskausoireet_L10)),
+            raskaus_oireetL7=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L7)),
+            all_terms=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L8) +  log(alkuraskaus_L7) + log(raskausoireet_L10) + log(raskaus_oireet_L7)),
+       best_terms=ARIMA(log(total) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) +  log(alkuraskaus_L7) + log(raskausoireet_L10) + log(raskaus_oireet_L7))
+          )
+
+
+fit_total_hist %>% forecast(TDSR_hist) %>% accuracy(TDSR_hist) %>%  dplyr::select(.model, RMSE:MAPE)
+
+fit_total_hist %>% forecast(TDSR_hist) %>% autoplot(TDSR_hist,level=NULL)
+
+
+fit_total_R1 %>% forecast(TDSR1) %>% accuracy(TDSR1) %>%  dplyr::select(.model, RMSE:MAPE)
+fit_total_R2 %>% forecast(TDSR2) %>% accuracy(TDSR2) %>%  dplyr::select(.model, RMSE:MAPE)
+fit_total_R3 %>% forecast(TDSR3) %>% accuracy(TDSR3) %>%  dplyr::select(.model, RMSE:MAPE)
+
+fit_total_R1 %>% forecast(TDSR1) %>% autoplot(TDSR1,level=NULL)
+fit_total_R2 %>% forecast(TDSR2) %>% autoplot(TDSR2,level=NULL)
+fit_total_R3 %>% forecast(TDSR3) %>% autoplot(TDSR3,level=NULL)
 ```
 Mean Average Error ja Mean Percentage Errorin, eli keskivirheen ja prosentuaalisen keskivirheen perusteella paras malli olisi se missä on kaikki hakutermit mukana. Kaikki hakutermit parantavat  Tulosten perusteella paras malli olisi malli joka yhdistää kaikki hakutermit. Kaikki mallit näyttäisi olevan parempia kuin pelkkä naivi malli. 
 
@@ -616,7 +691,7 @@ dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-
 dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-07-01"))) %>% 
         gg_tsdisplay(difference(log(first),12),
          plot_type='partial',lag=36) + 
-        labs(title="seasonally differenced",y="")
+        labs(title="seasonally differenced first",y="")
 
 ### Testing different ARIMA models with whole dataset 
 
@@ -655,7 +730,13 @@ fit_training_first <- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-
 
 fit_training_first %>% forecast(h=24) %>% accuracy(testing_dataset) %>%  dplyr::select(.model, RMSE:MAPE)
 
-#Best model for forecasting purpose is 103210
+##Diagnostiikka
+fit_first %>% dplyr::select(ARIMA101211) %>% gg_tsresiduals(lag=36)
+
+##Ljung-Box test
+augment(fit_first) %>%
+  dplyr::filter(.model == "ARIMA101211") %>%
+  features(.innov, ljung_box, lag=24, dof=4)
 ```
 
 Finding lags for predictors
@@ -664,17 +745,17 @@ Finding lags for predictors
 #Raskaustesti
 fit_t_raskaustesti_first <- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-07-01"))) %>% 
       model( 
-       L0=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaustesti)),
-       L3=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaustesti_L3)),
-        L4=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaustesti_L4)),
-        L5=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaustesti_L5)),
-        L6=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaustesti_L6)),
-        L7=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaustesti_L7)),
-        L8=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaustesti_L8)),
-        L9=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaustesti_L9)),
-        L10=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaustesti_L10)),
-        L11=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaustesti_L11)),
-        L12=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaustesti_L12))
+       L0=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti)),
+       L3=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L3)),
+        L4=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L4)),
+        L5=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L5)),
+        L6=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L6)),
+        L7=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L7)),
+        L8=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L8)),
+        L9=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L9)),
+        L10=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L10)),
+        L11=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L11)),
+        L12=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L12))
       )
 glance(fit_t_raskaustesti_first) %>% arrange(AICc) 
 #Paras on L8
@@ -682,17 +763,17 @@ glance(fit_t_raskaustesti_first) %>% arrange(AICc)
 #Alkuraskaus
 fit_t_alkuraskaus_first <- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-07-01"))) %>% 
       model( 
-       L0=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(alkuraskaus)),
-       L3=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(alkuraskaus_L3)),
-        L4=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(alkuraskaus_L4)),
-        L5=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(alkuraskaus_L5)),
-        L6=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(alkuraskaus_L6)),
-        L7=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(alkuraskaus_L7)),
-        L8=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(alkuraskaus_L8)),
-        L9=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(alkuraskaus_L9)),
-        L10=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(alkuraskaus_L10)),
-        L11=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(alkuraskaus_L11)),
-        L12=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(alkuraskaus_L12))
+       L0=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus)),
+       L3=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L3)),
+        L4=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L4)),
+        L5=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L5)),
+        L6=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L6)),
+        L7=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L7)),
+        L8=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L8)),
+        L9=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L9)),
+        L10=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L10)),
+        L11=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L11)),
+        L12=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L12))
       )
 glance(fit_t_alkuraskaus_first) %>% arrange(AICc) 
 #Paras on L7 tai L8
@@ -700,17 +781,17 @@ glance(fit_t_alkuraskaus_first) %>% arrange(AICc)
 #Raskausoireet
 fit_t_raskausoireet_first <- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-07-01"))) %>% 
       model( 
-       L0=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskausoireet)),
-       L3=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskausoireet_L3)),
-        L4=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskausoireet_L4)),
-        L5=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskausoireet_L5)),
-        L6=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskausoireet_L6)),
-        L7=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskausoireet_L7)),
-        L8=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskausoireet_L8)),
-        L9=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskausoireet_L9)),
-        L10=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskausoireet_L10)),
-        L11=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskausoireet_L11)),
-        L12=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskausoireet_L12))
+       L0=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskausoireet)),
+       L3=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskausoireet_L3)),
+        L4=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskausoireet_L4)),
+        L5=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskausoireet_L5)),
+        L6=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskausoireet_L6)),
+        L7=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskausoireet_L7)),
+        L8=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskausoireet_L8)),
+        L9=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskausoireet_L9)),
+        L10=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskausoireet_L10)),
+        L11=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskausoireet_L11)),
+        L12=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskausoireet_L12))
       )
 glance(fit_t_raskausoireet_first) %>% arrange(AICc) 
 #Paras on L10
@@ -719,17 +800,17 @@ glance(fit_t_raskausoireet_first) %>% arrange(AICc)
 #Raskaus Oireet
 fit_t_raskaus_oireet_first <- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2022-07-01"))) %>% 
       model( 
-       L0=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaus_oireet)),
-       L3=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaus_oireet_L3)),
-        L4=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaus_oireet_L4)),
-        L5=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaus_oireet_L5)),
-        L6=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaus_oireet_L6)),
-        L7=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaus_oireet_L7)),
-        L8=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaus_oireet_L8)),
-        L9=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaus_oireet_L9)),
-        L10=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaus_oireet_L10)),
-        L11=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaus_oireet_L11)),
-        L12=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaus_oireet_L12))
+       L0=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet)),
+       L3=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L3)),
+        L4=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L4)),
+        L5=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L5)),
+        L6=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L6)),
+        L7=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L7)),
+        L8=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L8)),
+        L9=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L9)),
+        L10=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L10)),
+        L11=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L11)),
+        L12=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L12))
       )
 glance(fit_t_raskaus_oireet_first) %>% arrange(AICc) 
 #Paras on L7
@@ -737,23 +818,139 @@ glance(fit_t_raskaus_oireet_first) %>% arrange(AICc)
 ```
 
 ```{r Ennustemalli esikoisdatalle ,echo=TRUE, message=FALSE}
+
+
 fit_predictors_training_first <- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2020-07-01"))) %>% 
-      model(Naive=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0)),
-            raskaustestiL8=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaustesti_L8)),
-            alkuraskausL7=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(alkuraskaus_L7)),
-            raskausoireetL10=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskausoireet_L10)),
-            raskaus_oireetL7=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaus_oireet_L7)),
-            all_terms=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaustesti_L8) +  log(alkuraskaus_L7) + log(raskausoireet_L10) + log(raskaus_oireet_L7)),
-            best_terms=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaustesti_L8) +  log(alkuraskaus_L7) + log(raskaus_oireet_L7))
-          )
+ model(Naive=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1)),
+            raskaustestiL8=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L8)),
+            alkuraskausL7=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L7)),
+            raskaus_oireetL7=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L7)),
+            raskausoireetL10=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,) + log(raskausoireet_L10)),
+            all_terms=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L8) +  log(alkuraskaus_L7) + log(raskausoireet_L10) + log(raskaus_oireet_L7)),
+            best_terms=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L8) +  log(alkuraskaus_L7) + log(raskaus_oireet_L7))
+ )
+    
 
-
+fit_predictors_training_first_toshare <- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2020-07-01"))) %>% 
+ model(Naive=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1)),
+            raskaustestiL8=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L8)),
+            alkuraskausL7=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L7)),
+            raskaus_oireetL7=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L7)),
+            raskausoireetL10=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,) + log(raskausoireet_L10)),
+            combined_model=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,) + log(raskausoireet_L10) + log(raskaustesti_L8) + log(raskaus_oireet_L7))
+ )   
+       
+       
   
 fit_predictors_training_first %>% forecast(testing_dataset) %>% accuracy(dataset) %>%  dplyr::select(.model, RMSE:MAPE)
-
 fit_predictors_training_first %>% forecast(testing_dataset) %>% autoplot(dataset,level=NULL)
-fit_predictors_training_first %>% forecast(testing_dataset) %>% autoplot(dataset,level=NULL)
+fcs_f_tra <- fit_predictors_training_first %>% forecast(testing_dataset)
 
-best_fit_first <- dataset %>% model(best_terms=ARIMA(log(first) ~ 0 + pdq(1,0,3) + PDQ(2,1,0) + log(raskaustesti_L8) +  log(alkuraskaus_L7) + log(raskaus_oireet_L7)))
+
+
+fit_predictors_training_first_toshare %>% forecast(testing_dataset) %>% accuracy(dataset) %>%  dplyr::select(.model, RMSE:MAPE)
+fit_predictors_training_first_toshare %>% forecast(testing_dataset) %>% autoplot(dataset,level=NULL)
+
+short_dataset <- dataset %>% dplyr::filter(between(timestamp,as.Date("2020-01-01"),as.Date("2022-07-01")))
+
+fit_predictors_training_first_toshare %>% dplyr::select(combined_model,Naive) %>%  forecast(testing_dataset) %>% autoplot(short_dataset,level=NULL)
+fit_predictors_training_first_toshare %>% dplyr::select(combined_model,Naive) %>%  forecast(testing_dataset) %>% autoplot(short_dataset,level=NULL)
+
+errors <- fit_predictors_training_first_toshare %>% dplyr::select(combined_model,Naive) %>%  forecast(testing_dataset) %>% dplyr::select(Month,.model,.mean,first)
+
+actual_f <- short_dataset %>% dplyr::select(Month,first) %>%  mutate(actual=first)
+
+errors<- errors %>% left_join(actual_f,by="Month") %>% mutate(error = actual - .mean,PE = error/actual*100)
+mean(errors$PE)
+
+errors %>% autoplot(errors)
+errors %>% autoplot(PE)
+errors <- 
+
+best_fit_first <- dataset %>% model(best_terms=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskausoireet_L10)))
 report(best_fit_first)
+
+
+
+###Kolme ennustetta
+
+fitR0<- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2020-02-01"))) %>% 
+ model(Naive=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1)),
+            raskaustestiL8=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L8)),
+            alkuraskausL7=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L7)),
+            raskaus_oireetL7=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L7)),
+            raskausoireetL10=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,) + log(raskausoireet_L10)),
+            all_terms=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L8) +  log(alkuraskaus_L7) + log(raskausoireet_L10) + log(raskaus_oireet_L7)),
+            best_terms=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L8) +  log(alkuraskaus_L7) + log(raskaus_oireet_L7))
+ )
+TDSR0 <- dataset %>% dplyr::filter(between(timestamp,as.Date("2020-03-01"),as.Date("2020-10-01")))    
+fitR0 %>% forecast(TDSR0) %>% accuracy(TDSR0) %>%  dplyr::select(.model, RMSE:MAPE)
+
+
+
+fitR1<- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2020-10-01"))) %>% 
+ model(Naive=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1)),
+            raskaustestiL8=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L8)),
+            alkuraskausL7=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L7)),
+            raskaus_oireetL7=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L7)),
+            raskausoireetL10=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,) + log(raskausoireet_L10)),
+            all_terms=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L8) +  log(alkuraskaus_L7) + log(raskausoireet_L10) + log(raskaus_oireet_L7)),
+            best_terms=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L8) +  log(alkuraskaus_L7) + log(raskaus_oireet_L7))
+ )
+TDSR1 <- dataset %>% dplyr::filter(between(timestamp,as.Date("2020-11-01"),as.Date("2021-05-01")))    
+fitR1 %>% forecast(TDSR1) %>% accuracy(TDSR1) %>%  dplyr::select(.model, RMSE:MAPE)
+
+
+
+fitR2<- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2021-05-01"))) %>% 
+ model(Naive=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1)),
+            raskaustestiL8=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L8)),
+            alkuraskausL7=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L7)),
+            raskaus_oireetL7=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L7)),
+            raskausoireetL10=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,) + log(raskausoireet_L10)),
+            all_terms=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L8) +  log(alkuraskaus_L7) + log(raskausoireet_L10) + log(raskaus_oireet_L7)),
+            best_terms=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L8) +  log(alkuraskaus_L7) + log(raskaus_oireet_L7))
+ )
+TDSR2 <- dataset %>% dplyr::filter(between(timestamp,as.Date("2021-06-01"),as.Date("2021-12-01"))) 
+
+fitR2 %>% forecast(TDSR2) %>% accuracy(TDSR2) %>%  dplyr::select(.model, RMSE:MAPE)
+
+
+fitR3<- dataset %>% dplyr::filter(between(timestamp,as.Date("2010-01-01"),as.Date("2021-12-01"))) %>% 
+ model(Naive=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1)),
+            raskaustestiL8=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L8)),
+            alkuraskausL7=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(alkuraskaus_L7)),
+            raskaus_oireetL7=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaus_oireet_L7)),
+            raskausoireetL10=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,) + log(raskausoireet_L10)),
+            all_terms=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L8) +  log(alkuraskaus_L7) + log(raskausoireet_L10) + log(raskaus_oireet_L7)),
+            best_terms=ARIMA(log(first) ~ 0 + pdq(1,0,1) + PDQ(2,1,1) + log(raskaustesti_L8) +  log(alkuraskaus_L7) + log(raskaus_oireet_L7))
+ )
+TDSR3 <- dataset %>% dplyr::filter(between(timestamp,as.Date("2022-01-01"),as.Date("2022-07-01"))) 
+fitR3 %>% forecast(TDSR3) %>% accuracy(TDSR3) %>%  dplyr::select(.model, RMSE:MAPE)
+
+fcs_R3<- fitR3 %>% forecast(TDSR3)
+
+
+fitR1 %>% forecast(TDSR1) %>% accuracy(TDSR1) %>%  dplyr::select(.model, RMSE:MAPE)
+fitR2 %>% forecast(TDSR2) %>% accuracy(TDSR2) %>%  dplyr::select(.model, RMSE:MAPE)
+fitR3 %>% forecast(TDSR3) %>% accuracy(TDSR3) %>%  dplyr::select(.model, RMSE:MAPE)
+
+fit_total_R1 %>% forecast(TDSR1) %>% autoplot(TDSR1,level=NULL)
+fit_total_R2 %>% forecast(TDSR2) %>% autoplot(TDSR2,level=NULL)
+fit_total_R3 %>% forecast(TDSR3) %>% autoplot(TDSR3,level=NULL)
+
+fit_total_R1 %>% dplyr::select(all_terms,Naive) %>% forecast(TDSR1) %>% autoplot(TDSR1,level=NULL)
+fit_total_R2 %>% dplyr::select(all_terms,Naive) %>% forecast(TDSR2) %>% autoplot(TDSR2,level=NULL)
+fit_total_R3 %>% dplyr::select(all_terms,Naive) %>% forecast(TDSR3) %>% autoplot(TDSR3,level=NULL)
+
+fitR0 %>% dplyr::select(best_terms,Naive) %>% forecast(TDSR0) %>% autoplot(TDSR0,level=NULL)
+fitR1 %>% dplyr::select(best_terms,Naive) %>% forecast(TDSR1) %>% autoplot(TDSR1,level=NULL)
+fitR2 %>% dplyr::select(best_terms,Naive) %>% forecast(TDSR2) %>% autoplot(TDSR2,level=NULL)
+fitR3 %>% dplyr::select(best_terms,Naive) %>% forecast(TDSR3) %>% autoplot(TDSR3,level=NULL)
+
+
+
+fitR2 %>% forecast(TDSR2) %>% autoplot(TDSR2,level=NULL)
+fitR3 %>% forecast(TDSR3) %>% autoplot(TDSR3,level=NULL)
+
 ```
